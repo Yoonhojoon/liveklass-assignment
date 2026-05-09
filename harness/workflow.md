@@ -65,3 +65,27 @@ git log -1 --oneline
 ```
 
 Do not claim a slice is complete unless the commit exists. If files remain uncommitted because they belong to the next slice, record that explicitly before continuing.
+
+## GitHub issue / branch / PR workflow
+
+Every new task must start from GitHub issue tracking unless the user explicitly says not to use GitHub for that task.
+
+1. Choose the matching template:
+   - Bug fix: `.github/ISSUE_TEMPLATE/bug_report.md`
+   - Feature/improvement/performance: `.github/ISSUE_TEMPLATE/feature_request.md`
+2. Create a GitHub issue from the chosen template before coding.
+   - Fill the branch-name field with the planned branch name when available.
+   - Keep scope small enough to match one harness slice when possible.
+3. Create a separate branch from current `master` for the issue.
+   - Recommended names: `feat/<issue-number>-short-name`, `fix/<issue-number>-short-name`, `docs/<issue-number>-short-name`, `test/<issue-number>-short-name`.
+4. Work on the branch using the slice loop above.
+   - Keep commits small and Korean 1-2 line messages.
+   - Run targeted tests first, then broader tests before PR.
+5. After implementation and tests pass, push the branch and open a PR to `master`.
+   - Use `.github/PULL_REQUEST_TEMPLATE.md`.
+   - Link the issue in the PR.
+   - Include test command/result summary.
+6. Merge to `master` only after PR checks pass and review requirements are satisfied.
+7. After merge, confirm `master` contains the merge and the linked issue is closed or updated.
+
+Do not merge failed tests, missing PR template content, or broad unreviewed scope into `master`.

@@ -44,3 +44,24 @@ password, secret, token, apiKey, api_key, Authorization, Bearer, /Users/, C:\\Us
 ```
 
 Do not commit real secrets or personal environment details.
+
+## GitHub workflow gates
+
+Before implementation:
+
+- GitHub issue exists using `.github/ISSUE_TEMPLATE/bug_report.md` or `.github/ISSUE_TEMPLATE/feature_request.md`.
+- Branch is created from `master` and matches the issue scope.
+- Issue body records the planned branch name when the template provides that field.
+
+Before PR:
+
+- Relevant tests pass and command output is summarized.
+- Commits are small and use concise Korean 1-2 line messages.
+- PR targets `master` and uses `.github/PULL_REQUEST_TEMPLATE.md`.
+- PR links the issue.
+
+Before merge:
+
+- PR checks pass or the absence of configured checks is noted.
+- Review requirements are satisfied.
+- No unresolved scope, test, secret, or harness checklist blockers remain.
