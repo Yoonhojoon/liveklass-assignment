@@ -2,7 +2,7 @@ package com.liveklass.demo.common.response;
 
 import org.springframework.http.HttpStatus;
 
-public interface ErrorResponse {
+public interface SuccessResponse {
 
     HttpStatus getHttpStatus();
 

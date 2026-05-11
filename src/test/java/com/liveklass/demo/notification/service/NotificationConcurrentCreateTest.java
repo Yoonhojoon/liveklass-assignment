@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
+import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -16,10 +20,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+@DisplayName("알림 동시 생성 테스트")
 @SpringBootTest(properties = "notification.worker.enabled=false")
 class NotificationConcurrentCreateTest {
 
@@ -29,12 +35,21 @@ class NotificationConcurrentCreateTest {
     @Autowired
     private NotificationRequestRepository repository;
 
+    @Autowired
+    private NotificationDeliveryJobRepository deliveryJobRepository;
+
+    @Autowired
+    private NotificationInboxRepository inboxRepository;
+
     @BeforeEach
     void clean() {
+        inboxRepository.deleteAll();
+        deliveryJobRepository.deleteAll();
         repository.deleteAll();
     }
 
     @Test
+    @DisplayName("동시에 같은 이벤트를 요청해도 요청, 작업, 알림함은 하나만 생성된다")
     void concurrentDuplicateCreateReturnsSameExistingRequest() throws Exception {
         int attempts = 8;
         ExecutorService executor = Executors.newFixedThreadPool(attempts);
@@ -62,10 +77,12 @@ class NotificationConcurrentCreateTest {
         executor.shutdownNow();
 
         Set<Long> ids = results.stream()
-                .map(result -> result.notificationRequest().getId())
+                .map(result -> result.notification().request().getId())
                 .collect(Collectors.toSet());
         assertThat(ids).hasSize(1);
         assertThat(repository.count()).isEqualTo(1);
+        assertThat(deliveryJobRepository.count()).isEqualTo(1);
+        assertThat(inboxRepository.count()).isEqualTo(1);
         assertThat(results).anyMatch(result -> !result.duplicated());
         assertThat(results.stream().filter(NotificationCreateResult::duplicated).count()).isEqualTo(attempts - 1);
     }

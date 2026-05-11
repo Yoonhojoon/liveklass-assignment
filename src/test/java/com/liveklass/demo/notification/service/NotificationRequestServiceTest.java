@@ -3,15 +3,24 @@ package com.liveklass.demo.notification.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
-import com.liveklass.demo.notification.domain.NotificationRequest;
+import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
+import com.liveklass.demo.notification.domain.NotificationInbox;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
+import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
+import com.liveklass.demo.notification.service.dto.NotificationDetails;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+@DisplayName("알림 요청 서비스 테스트")
 @SpringBootTest(properties = "notification.worker.enabled=false")
 class NotificationRequestServiceTest {
 
@@ -19,45 +28,75 @@ class NotificationRequestServiceTest {
     private NotificationRequestService service;
 
     @Autowired
-    private NotificationRequestRepository repository;
+    private NotificationRequestRepository requestRepository;
+
+    @Autowired
+    private NotificationDeliveryJobRepository deliveryJobRepository;
+
+    @Autowired
+    private NotificationInboxRepository inboxRepository;
 
     @BeforeEach
     void clean() {
-        repository.deleteAll();
+        inboxRepository.deleteAll();
+        deliveryJobRepository.deleteAll();
+        requestRepository.deleteAll();
     }
 
-    @Test
-    void createsRequestedNotificationRequestWithoutSending() {
-        NotificationCreateResult result = service.create(command("event-1"));
+    @Nested
+    @DisplayName("요청 생성")
+    class CreateRequest {
 
-        assertThat(result.duplicated()).isFalse();
-        NotificationRequest saved = repository.findById(result.notificationRequest().getId()).orElseThrow();
-        assertThat(saved.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
-        assertThat(saved.getRetryCount()).isZero();
-        assertThat(saved.getSentAt()).isNull();
+        @Test
+        @DisplayName("요청, 발송 작업, 알림함을 생성하고 발송은 수행하지 않는다")
+        void createsRequestDeliveryJobAndInboxWithoutSending() {
+            NotificationCreateResult result = service.create(command("event-1"));
+
+            assertThat(result.duplicated()).isFalse();
+            Long id = result.notification().request().getId();
+            NotificationDeliveryJob job = deliveryJobRepository.findById(id).orElseThrow();
+            NotificationInbox inbox = inboxRepository.findById(id).orElseThrow();
+            assertThat(requestRepository.count()).isEqualTo(1);
+            assertThat(deliveryJobRepository.count()).isEqualTo(1);
+            assertThat(inboxRepository.count()).isEqualTo(1);
+            assertThat(job.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
+            assertThat(job.getRetryCount()).isZero();
+            assertThat(job.getSentAt()).isNull();
+            assertThat(inbox.getReadAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("동일 이벤트 요청은 기존 요청을 반환한다")
+        void duplicateEventReturnsExistingRequest() {
+            NotificationCreateResult first = service.create(command("event-1"));
+            NotificationCreateResult second = service.create(command("event-1"));
+
+            assertThat(second.duplicated()).isTrue();
+            assertThat(second.notification().request().getId()).isEqualTo(first.notification().request().getId());
+            assertThat(requestRepository.count()).isEqualTo(1);
+            assertThat(deliveryJobRepository.count()).isEqualTo(1);
+            assertThat(inboxRepository.count()).isEqualTo(1);
+        }
     }
 
-    @Test
-    void duplicateEventReturnsExistingRequest() {
-        NotificationCreateResult first = service.create(command("event-1"));
-        NotificationCreateResult second = service.create(command("event-1"));
+    @Nested
+    @DisplayName("읽음 처리")
+    class ReadNotification {
 
-        assertThat(second.duplicated()).isTrue();
-        assertThat(second.notificationRequest().getId()).isEqualTo(first.notificationRequest().getId());
-        assertThat(repository.count()).isEqualTo(1);
-    }
+        @Test
+        @DisplayName("읽음 처리는 멱등이고 최초 읽음 시각을 보존한다")
+        void markReadIsIdempotentAndPreservesFirstReadAt() {
+            NotificationCreateResult created = service.create(command("event-read"));
+            Long id = created.notification().request().getId();
 
-    @Test
-    void markReadIsIdempotentAndPreservesFirstReadAt() {
-        NotificationCreateResult created = service.create(command("event-read"));
+            NotificationDetails first = service.markRead(id, "user-1");
+            NotificationDetails second = service.markRead(id, "user-1");
 
-        NotificationRequest first = service.markRead(created.notificationRequest().getId(), "user-1");
-        NotificationRequest second = service.markRead(created.notificationRequest().getId(), "user-1");
-
-        assertThat(first.getReadAt()).isNotNull();
-        assertThat(second.getReadAt()).isEqualTo(first.getReadAt());
-        assertThat(service.listForRecipient("user-1", true)).hasSize(1);
-        assertThat(service.listForRecipient("user-1", false)).isEmpty();
+            assertThat(first.inbox().getReadAt()).isNotNull();
+            assertThat(second.inbox().getReadAt()).isEqualTo(first.inbox().getReadAt());
+            assertThat(service.listForRecipient("user-1", true)).hasSize(1);
+            assertThat(service.listForRecipient("user-1", false)).isEmpty();
+        }
     }
 
     private NotificationCreateCommand command(String eventId) {

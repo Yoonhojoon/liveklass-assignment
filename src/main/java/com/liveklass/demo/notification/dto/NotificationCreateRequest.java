@@ -1,6 +1,6 @@
 package com.liveklass.demo.notification.dto;
 
-import com.liveklass.demo.notification.service.NotificationCreateCommand;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
 
