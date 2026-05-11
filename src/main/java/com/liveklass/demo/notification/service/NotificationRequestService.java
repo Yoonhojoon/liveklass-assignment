@@ -44,7 +44,7 @@ public class NotificationRequestService {
     }
 
     public NotificationCreateResult create(NotificationCreateCommand command) {
-        validate(command);
+        requireCommand(command);
         return requestRepository.findByRecipientIdAndNotificationTypeAndChannelAndEventId(
                         command.recipientId(), command.notificationType(), command.channel(), command.eventId())
                 .map(existing -> new NotificationCreateResult(details(existing), true))
@@ -101,7 +101,7 @@ public class NotificationRequestService {
                 ));
                 NotificationDeliveryJob deliveryJob = deliveryJobRepository.saveAndFlush(new NotificationDeliveryJob(request));
                 NotificationInbox inbox = inboxRepository.saveAndFlush(new NotificationInbox(request));
-                return new NotificationDetails(request, deliveryJob, inbox);
+                return details(request, deliveryJob, inbox);
             });
             return new NotificationCreateResult(created, false);
         } catch (DataIntegrityViolationException duplicate) {
@@ -125,27 +125,35 @@ public class NotificationRequestService {
     private NotificationDetails details(NotificationRequest request, NotificationInbox inbox) {
         NotificationDeliveryJob deliveryJob = deliveryJobRepository.findById(request.getId())
                 .orElseThrow(() -> new NotificationNotFoundException(request.getId()));
-        return new NotificationDetails(request, deliveryJob, inbox);
+        return details(request, deliveryJob, inbox);
     }
 
-    private void validate(NotificationCreateCommand command) {
-        if (command.notificationType() == null) {
-            throw new NotificationValidationException("notificationType is required");
-        }
-        if (command.channel() == null) {
-            throw new NotificationValidationException("channel is required");
-        }
-        if (isBlank(command.recipientId())) {
-            throw new NotificationValidationException("recipientId is required");
-        }
-        if (isBlank(command.eventId())) {
-            throw new NotificationValidationException("eventId is required");
-        }
-        if (isBlank(command.title())) {
-            throw new NotificationValidationException("title is required");
-        }
-        if (isBlank(command.message())) {
-            throw new NotificationValidationException("message is required");
+    private NotificationDetails details(NotificationRequest request, NotificationDeliveryJob deliveryJob, NotificationInbox inbox) {
+        return new NotificationDetails(
+                request.getId(),
+                request.getRecipientId(),
+                request.getNotificationType(),
+                request.getChannel(),
+                request.getEventId(),
+                request.getTitle(),
+                request.getMessage(),
+                deliveryJob.getStatus(),
+                deliveryJob.getRetryCount(),
+                deliveryJob.getLastFailureReason(),
+                deliveryJob.getNextRetryAt(),
+                inbox.getReadAt() != null,
+                inbox.getReadAt(),
+                request.getCreatedAt(),
+                deliveryJob.getUpdatedAt(),
+                deliveryJob.getProcessingStartedAt(),
+                deliveryJob.getSentAt(),
+                deliveryJob.getFailedAt()
+        );
+    }
+
+    private void requireCommand(NotificationCreateCommand command) {
+        if (command == null) {
+            throw new IllegalArgumentException("notification create command is required");
         }
     }
 

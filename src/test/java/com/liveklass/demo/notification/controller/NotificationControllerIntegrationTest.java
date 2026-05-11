@@ -111,6 +111,28 @@ class NotificationControllerIntegrationTest {
                     .andExpect(jsonPath("$.detail").value("recipientId is required"))
                     .andExpect(jsonPath("$.code").value("NOTIFICATION4000"));
         }
+
+        @Test
+        @DisplayName("필수 enum 값이 없으면 ProblemDetail 형식의 에러 응답을 반환한다")
+        void nullEnumRequestReturnsProblemDetailError() throws Exception {
+            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+                    "user-1",
+                    null,
+                    NotificationChannel.EMAIL,
+                    "payment-null-type",
+                    "결제가 완료되었습니다",
+                    "결제 확정 알림입니다."
+            ));
+
+            mockMvc.perform(post("/api/notifications")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.title").value("알림 요청이 올바르지 않습니다."))
+                    .andExpect(jsonPath("$.detail").value("notificationType is required"))
+                    .andExpect(jsonPath("$.code").value("NOTIFICATION4000"));
+        }
     }
 
     @Nested

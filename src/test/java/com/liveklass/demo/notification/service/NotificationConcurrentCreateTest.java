@@ -77,7 +77,7 @@ class NotificationConcurrentCreateTest {
         executor.shutdownNow();
 
         Set<Long> ids = results.stream()
-                .map(result -> result.notification().request().getId())
+                .map(result -> result.notification().id())
                 .collect(Collectors.toSet());
         assertThat(ids).hasSize(1);
         assertThat(repository.count()).isEqualTo(1);

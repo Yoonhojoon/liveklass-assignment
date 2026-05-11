@@ -7,6 +7,7 @@ import com.liveklass.demo.notification.dto.NotificationCreateResponse;
 import com.liveklass.demo.notification.dto.NotificationResponse;
 import com.liveklass.demo.notification.service.NotificationRequestService;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,7 +32,7 @@ public class NotificationController {
     }
 
     @PostMapping("/notifications")
-    public ResponseEntity<ApiResponse<NotificationCreateResponse>> create(@RequestBody NotificationCreateRequest request) {
+    public ResponseEntity<ApiResponse<NotificationCreateResponse>> create(@Valid @RequestBody NotificationCreateRequest request) {
         NotificationCreateResult result = service.create(request.toCommand());
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success(CommonSuccessStatus.ACCEPTED, NotificationCreateResponse.from(result)));

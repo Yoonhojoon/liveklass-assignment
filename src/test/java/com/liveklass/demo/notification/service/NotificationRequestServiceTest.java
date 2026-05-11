@@ -53,7 +53,7 @@ class NotificationRequestServiceTest {
             NotificationCreateResult result = service.create(command("event-1"));
 
             assertThat(result.duplicated()).isFalse();
-            Long id = result.notification().request().getId();
+            Long id = result.notification().id();
             NotificationDeliveryJob job = deliveryJobRepository.findById(id).orElseThrow();
             NotificationInbox inbox = inboxRepository.findById(id).orElseThrow();
             assertThat(requestRepository.count()).isEqualTo(1);
@@ -72,7 +72,7 @@ class NotificationRequestServiceTest {
             NotificationCreateResult second = service.create(command("event-1"));
 
             assertThat(second.duplicated()).isTrue();
-            assertThat(second.notification().request().getId()).isEqualTo(first.notification().request().getId());
+            assertThat(second.notification().id()).isEqualTo(first.notification().id());
             assertThat(requestRepository.count()).isEqualTo(1);
             assertThat(deliveryJobRepository.count()).isEqualTo(1);
             assertThat(inboxRepository.count()).isEqualTo(1);
@@ -87,13 +87,13 @@ class NotificationRequestServiceTest {
         @DisplayName("읽음 처리는 멱등이고 최초 읽음 시각을 보존한다")
         void markReadIsIdempotentAndPreservesFirstReadAt() {
             NotificationCreateResult created = service.create(command("event-read"));
-            Long id = created.notification().request().getId();
+            Long id = created.notification().id();
 
             NotificationDetails first = service.markRead(id, "user-1");
             NotificationDetails second = service.markRead(id, "user-1");
 
-            assertThat(first.inbox().getReadAt()).isNotNull();
-            assertThat(second.inbox().getReadAt()).isEqualTo(first.inbox().getReadAt());
+            assertThat(first.readAt()).isNotNull();
+            assertThat(second.readAt()).isEqualTo(first.readAt());
             assertThat(service.listForRecipient("user-1", true)).hasSize(1);
             assertThat(service.listForRecipient("user-1", false)).isEmpty();
         }

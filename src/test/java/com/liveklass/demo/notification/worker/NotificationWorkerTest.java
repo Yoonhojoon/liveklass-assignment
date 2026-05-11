@@ -11,6 +11,7 @@ import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.sender.NotificationSendCommand;
 import com.liveklass.demo.notification.sender.NotificationSender;
 import com.liveklass.demo.notification.service.NotificationProcessingService;
 import java.time.Instant;
@@ -184,11 +185,11 @@ class NotificationWorkerTest {
         }
 
         @Override
-        public void send(NotificationRequest request) {
+        public void send(NotificationSendCommand command) {
             if (fail) {
                 throw new IllegalStateException("temporary sender failure");
             }
-            sentIds.add(request.getId());
+            sentIds.add(command.id());
         }
     }
 }
