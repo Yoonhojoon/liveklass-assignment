@@ -1,5 +1,7 @@
 package com.liveklass.demo.notification.controller;
 
+import com.liveklass.demo.common.response.ApiResponse;
+import com.liveklass.demo.common.response.CommonSuccessStatus;
 import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.dto.NotificationCreateResponse;
 import com.liveklass.demo.notification.dto.NotificationResponse;
@@ -29,25 +31,27 @@ public class NotificationController {
     }
 
     @PostMapping("/notifications")
-    public ResponseEntity<NotificationCreateResponse> create(@RequestBody NotificationCreateRequest request) {
+    public ResponseEntity<ApiResponse<NotificationCreateResponse>> create(@RequestBody NotificationCreateRequest request) {
         NotificationCreateResult result = service.create(request.toCommand());
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(NotificationCreateResponse.from(result));
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ApiResponse.success(CommonSuccessStatus.ACCEPTED, NotificationCreateResponse.from(result)));
     }
 
     @GetMapping("/notifications/{id}")
-    public NotificationResponse get(@PathVariable Long id) {
-        return NotificationResponse.from(service.get(id));
+    public ApiResponse<NotificationResponse> get(@PathVariable Long id) {
+        return ApiResponse.success(CommonSuccessStatus.OK, NotificationResponse.from(service.get(id)));
     }
 
     @GetMapping("/users/{recipientId}/notifications")
-    public List<NotificationResponse> list(@PathVariable String recipientId, @RequestParam(required = false) Boolean read) {
-        return service.listForRecipient(recipientId, read).stream()
+    public ApiResponse<List<NotificationResponse>> list(@PathVariable String recipientId, @RequestParam(required = false) Boolean read) {
+        List<NotificationResponse> notifications = service.listForRecipient(recipientId, read).stream()
                 .map(NotificationResponse::from)
                 .toList();
+        return ApiResponse.success(CommonSuccessStatus.OK, notifications);
     }
 
     @PatchMapping("/notifications/{id}/read")
-    public NotificationResponse markRead(@PathVariable Long id, @RequestHeader("X-User-Id") String recipientId) {
-        return NotificationResponse.from(service.markRead(id, recipientId));
+    public ApiResponse<NotificationResponse> markRead(@PathVariable Long id, @RequestHeader("X-User-Id") String recipientId) {
+        return ApiResponse.success(CommonSuccessStatus.OK, NotificationResponse.from(service.markRead(id, recipientId)));
     }
 }

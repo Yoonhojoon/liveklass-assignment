@@ -66,24 +66,50 @@ class NotificationControllerIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
                     .andExpect(status().isAccepted())
-                    .andExpect(jsonPath("$.status").value("REQUESTED"))
-                    .andExpect(jsonPath("$.duplicated").value(false))
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.code").value("COMMON2020"))
+                    .andExpect(jsonPath("$.data.status").value("REQUESTED"))
+                    .andExpect(jsonPath("$.data.duplicated").value(false))
                     .andReturn();
 
             MvcResult second = mockMvc.perform(post("/api/notifications")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
                     .andExpect(status().isAccepted())
-                    .andExpect(jsonPath("$.status").value("REQUESTED"))
-                    .andExpect(jsonPath("$.duplicated").value(true))
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.code").value("COMMON2020"))
+                    .andExpect(jsonPath("$.data.status").value("REQUESTED"))
+                    .andExpect(jsonPath("$.data.duplicated").value(true))
                     .andReturn();
 
-            long firstId = objectMapper.readTree(first.getResponse().getContentAsString()).get("id").asLong();
-            long secondId = objectMapper.readTree(second.getResponse().getContentAsString()).get("id").asLong();
+            long firstId = objectMapper.readTree(first.getResponse().getContentAsString()).get("data").get("id").asLong();
+            long secondId = objectMapper.readTree(second.getResponse().getContentAsString()).get("data").get("id").asLong();
             assertThat(secondId).isEqualTo(firstId);
             assertThat(repository.count()).isEqualTo(1);
             assertThat(deliveryJobRepository.count()).isEqualTo(1);
             assertThat(inboxRepository.count()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("잘못된 요청은 ProblemDetail 형식의 에러 응답을 반환한다")
+        void invalidRequestReturnsProblemDetailError() throws Exception {
+            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+                    "",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "payment-invalid",
+                    "결제가 완료되었습니다",
+                    "결제 확정 알림입니다."
+            ));
+
+            mockMvc.perform(post("/api/notifications")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.title").value("알림 요청이 올바르지 않습니다."))
+                    .andExpect(jsonPath("$.detail").value("recipientId is required"))
+                    .andExpect(jsonPath("$.code").value("NOTIFICATION4000"));
         }
     }
 
@@ -98,14 +124,27 @@ class NotificationControllerIntegrationTest {
 
             mockMvc.perform(get("/api/notifications/{id}", id))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id").value(id))
-                    .andExpect(jsonPath("$.recipientId").value("user-1"))
-                    .andExpect(jsonPath("$.notificationType").value("PAYMENT_CONFIRMED"))
-                    .andExpect(jsonPath("$.channel").value("EMAIL"))
-                    .andExpect(jsonPath("$.status").value("REQUESTED"))
-                    .andExpect(jsonPath("$.retryCount").value(0))
-                    .andExpect(jsonPath("$.createdAt").exists())
-                    .andExpect(jsonPath("$.updatedAt").exists());
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.code").value("COMMON2000"))
+                    .andExpect(jsonPath("$.data.id").value(id))
+                    .andExpect(jsonPath("$.data.recipientId").value("user-1"))
+                    .andExpect(jsonPath("$.data.notificationType").value("PAYMENT_CONFIRMED"))
+                    .andExpect(jsonPath("$.data.channel").value("EMAIL"))
+                    .andExpect(jsonPath("$.data.status").value("REQUESTED"))
+                    .andExpect(jsonPath("$.data.retryCount").value(0))
+                    .andExpect(jsonPath("$.data.createdAt").exists())
+                    .andExpect(jsonPath("$.data.updatedAt").exists());
+        }
+
+        @Test
+        @DisplayName("없는 알림은 ProblemDetail 형식의 에러 응답을 반환한다")
+        void notFoundReturnsProblemDetailError() throws Exception {
+            mockMvc.perform(get("/api/notifications/{id}", 999L))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.status").value(404))
+                    .andExpect(jsonPath("$.title").value("알림을 찾을 수 없습니다."))
+                    .andExpect(jsonPath("$.detail").value("Notification not found: 999"))
+                    .andExpect(jsonPath("$.code").value("NOTIFICATION4004"));
         }
     }
 
@@ -122,22 +161,22 @@ class NotificationControllerIntegrationTest {
             mockMvc.perform(patch("/api/notifications/{id}/read", readId)
                             .header("X-User-Id", "user-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.read").value(true))
-                    .andExpect(jsonPath("$.readAt").exists());
+                    .andExpect(jsonPath("$.data.read").value(true))
+                    .andExpect(jsonPath("$.data.readAt").exists());
 
             mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.length()").value(2));
+                    .andExpect(jsonPath("$.data.length()").value(2));
 
             mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1").param("read", "true"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.length()").value(1))
-                    .andExpect(jsonPath("$[0].id").value(readId));
+                    .andExpect(jsonPath("$.data.length()").value(1))
+                    .andExpect(jsonPath("$.data[0].id").value(readId));
 
             mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1").param("read", "false"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.length()").value(1))
-                    .andExpect(jsonPath("$[0].id").value(unreadId));
+                    .andExpect(jsonPath("$.data.length()").value(1))
+                    .andExpect(jsonPath("$.data[0].id").value(unreadId));
         }
 
         @Test
@@ -157,7 +196,7 @@ class NotificationControllerIntegrationTest {
 
             JsonNode firstJson = objectMapper.readTree(first.getResponse().getContentAsString());
             JsonNode secondJson = objectMapper.readTree(second.getResponse().getContentAsString());
-            assertThat(secondJson.get("readAt").asText()).isEqualTo(firstJson.get("readAt").asText());
+            assertThat(secondJson.get("data").get("readAt").asText()).isEqualTo(firstJson.get("data").get("readAt").asText());
         }
     }
 
@@ -167,7 +206,7 @@ class NotificationControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(request(eventId))))
                 .andExpect(status().isAccepted())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("data").get("id").asLong();
     }
 
     private NotificationCreateRequest request(String eventId) {

@@ -45,6 +45,34 @@ Content-Type: application/json
 
 응답은 즉시 `202 Accepted`를 반환하며 실제 발송 성공 여부를 확정하지 않습니다.
 
+성공 응답은 공통 래퍼를 사용합니다.
+
+```json
+{
+  "success": true,
+  "code": "COMMON2020",
+  "message": "요청이 접수되었습니다.",
+  "data": {
+    "id": 1,
+    "status": "REQUESTED",
+    "duplicated": false
+  }
+}
+```
+
+오류 응답은 RFC 9457 `ProblemDetail` 형식을 사용하고, 애플리케이션 에러 코드는 확장 필드 `code`로 제공합니다.
+
+```json
+{
+  "type": "about:blank",
+  "title": "알림 요청이 올바르지 않습니다.",
+  "status": 400,
+  "detail": "recipientId is required",
+  "instance": "/api/notifications",
+  "code": "NOTIFICATION4000"
+}
+```
+
 ### 상태 조회
 
 ```http
@@ -125,6 +153,7 @@ worker가 폴링/점유/재시도하는 DB 큐입니다.
 - 다중 인스턴스 중복 처리는 조건부 update claim으로 방지합니다.
 - `locked_by`, `locked_until`은 delivery job에만 두어 request 원장을 worker 세부 구현에서 분리했습니다.
 - `read_at`은 inbox에만 두어 사용자 보관 상태와 worker 큐 상태를 분리했습니다.
+- 성공 응답은 `common.response.ApiResponse`로 통일하고, 오류 응답은 Spring의 `ProblemDetail` 기반으로 분리했습니다.
 
 ## 테스트 실행 방법
 
