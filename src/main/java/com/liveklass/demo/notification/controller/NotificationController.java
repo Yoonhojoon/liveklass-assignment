@@ -1,10 +1,10 @@
 package com.liveklass.demo.notification.controller;
 
-import com.liveklass.demo.notification.service.NotificationCreateResult;
 import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.dto.NotificationCreateResponse;
 import com.liveklass.demo.notification.dto.NotificationResponse;
 import com.liveklass.demo.notification.service.NotificationRequestService;
+import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

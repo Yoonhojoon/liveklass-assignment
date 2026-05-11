@@ -1,8 +1,8 @@
 package com.liveklass.demo.notification.controller;
 
 import com.liveklass.demo.common.response.ErrorResponse;
-import com.liveklass.demo.notification.service.NotificationNotFoundException;
-import com.liveklass.demo.notification.service.NotificationValidationException;
+import com.liveklass.demo.notification.exception.NotificationNotFoundException;
+import com.liveklass.demo.notification.exception.NotificationValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingRequestHeaderException;

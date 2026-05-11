@@ -2,6 +2,7 @@ package com.liveklass.demo.notification.service;
 
 import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
 import com.liveklass.demo.notification.domain.NotificationStatus;
+import com.liveklass.demo.notification.exception.NotificationNotFoundException;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import java.time.Clock;
 import java.time.Duration;

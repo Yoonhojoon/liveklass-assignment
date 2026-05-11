@@ -6,7 +6,7 @@ import com.liveklass.demo.notification.domain.NotificationInbox;
 import com.liveklass.demo.notification.domain.NotificationRequest;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
-import com.liveklass.demo.notification.service.NotificationDetails;
+import com.liveklass.demo.notification.service.dto.NotificationDetails;
 import java.time.Instant;
 
 public record NotificationResponse(

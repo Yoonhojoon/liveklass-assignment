@@ -1,4 +1,4 @@
-package com.liveklass.demo.notification.service;
+package com.liveklass.demo.notification.exception;
 
 public class NotificationNotFoundException extends RuntimeException {
 
