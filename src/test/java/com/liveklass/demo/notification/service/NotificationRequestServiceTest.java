@@ -3,9 +3,12 @@ package com.liveklass.demo.notification.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
-import com.liveklass.demo.notification.domain.NotificationRequest;
+import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
+import com.liveklass.demo.notification.domain.NotificationInbox;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,22 +22,36 @@ class NotificationRequestServiceTest {
     private NotificationRequestService service;
 
     @Autowired
-    private NotificationRequestRepository repository;
+    private NotificationRequestRepository requestRepository;
+
+    @Autowired
+    private NotificationDeliveryJobRepository deliveryJobRepository;
+
+    @Autowired
+    private NotificationInboxRepository inboxRepository;
 
     @BeforeEach
     void clean() {
-        repository.deleteAll();
+        inboxRepository.deleteAll();
+        deliveryJobRepository.deleteAll();
+        requestRepository.deleteAll();
     }
 
     @Test
-    void createsRequestedNotificationRequestWithoutSending() {
+    void createsRequestDeliveryJobAndInboxWithoutSending() {
         NotificationCreateResult result = service.create(command("event-1"));
 
         assertThat(result.duplicated()).isFalse();
-        NotificationRequest saved = repository.findById(result.notificationRequest().getId()).orElseThrow();
-        assertThat(saved.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
-        assertThat(saved.getRetryCount()).isZero();
-        assertThat(saved.getSentAt()).isNull();
+        Long id = result.notification().request().getId();
+        NotificationDeliveryJob job = deliveryJobRepository.findById(id).orElseThrow();
+        NotificationInbox inbox = inboxRepository.findById(id).orElseThrow();
+        assertThat(requestRepository.count()).isEqualTo(1);
+        assertThat(deliveryJobRepository.count()).isEqualTo(1);
+        assertThat(inboxRepository.count()).isEqualTo(1);
+        assertThat(job.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
+        assertThat(job.getRetryCount()).isZero();
+        assertThat(job.getSentAt()).isNull();
+        assertThat(inbox.getReadAt()).isNull();
     }
 
     @Test
@@ -43,19 +60,22 @@ class NotificationRequestServiceTest {
         NotificationCreateResult second = service.create(command("event-1"));
 
         assertThat(second.duplicated()).isTrue();
-        assertThat(second.notificationRequest().getId()).isEqualTo(first.notificationRequest().getId());
-        assertThat(repository.count()).isEqualTo(1);
+        assertThat(second.notification().request().getId()).isEqualTo(first.notification().request().getId());
+        assertThat(requestRepository.count()).isEqualTo(1);
+        assertThat(deliveryJobRepository.count()).isEqualTo(1);
+        assertThat(inboxRepository.count()).isEqualTo(1);
     }
 
     @Test
     void markReadIsIdempotentAndPreservesFirstReadAt() {
         NotificationCreateResult created = service.create(command("event-read"));
+        Long id = created.notification().request().getId();
 
-        NotificationRequest first = service.markRead(created.notificationRequest().getId(), "user-1");
-        NotificationRequest second = service.markRead(created.notificationRequest().getId(), "user-1");
+        NotificationDetails first = service.markRead(id, "user-1");
+        NotificationDetails second = service.markRead(id, "user-1");
 
-        assertThat(first.getReadAt()).isNotNull();
-        assertThat(second.getReadAt()).isEqualTo(first.getReadAt());
+        assertThat(first.inbox().getReadAt()).isNotNull();
+        assertThat(second.inbox().getReadAt()).isEqualTo(first.inbox().getReadAt());
         assertThat(service.listForRecipient("user-1", true)).hasSize(1);
         assertThat(service.listForRecipient("user-1", false)).isEmpty();
     }

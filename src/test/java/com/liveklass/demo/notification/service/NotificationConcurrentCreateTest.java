@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,8 +31,16 @@ class NotificationConcurrentCreateTest {
     @Autowired
     private NotificationRequestRepository repository;
 
+    @Autowired
+    private NotificationDeliveryJobRepository deliveryJobRepository;
+
+    @Autowired
+    private NotificationInboxRepository inboxRepository;
+
     @BeforeEach
     void clean() {
+        inboxRepository.deleteAll();
+        deliveryJobRepository.deleteAll();
         repository.deleteAll();
     }
 
@@ -62,10 +72,12 @@ class NotificationConcurrentCreateTest {
         executor.shutdownNow();
 
         Set<Long> ids = results.stream()
-                .map(result -> result.notificationRequest().getId())
+                .map(result -> result.notification().request().getId())
                 .collect(Collectors.toSet());
         assertThat(ids).hasSize(1);
         assertThat(repository.count()).isEqualTo(1);
+        assertThat(deliveryJobRepository.count()).isEqualTo(1);
+        assertThat(inboxRepository.count()).isEqualTo(1);
         assertThat(results).anyMatch(result -> !result.duplicated());
         assertThat(results.stream().filter(NotificationCreateResult::duplicated).count()).isEqualTo(attempts - 1);
     }

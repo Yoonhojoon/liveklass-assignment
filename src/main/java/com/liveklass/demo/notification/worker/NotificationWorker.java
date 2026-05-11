@@ -1,8 +1,8 @@
 package com.liveklass.demo.notification.worker;
 
-import com.liveklass.demo.notification.service.NotificationProcessingService;
-import com.liveklass.demo.notification.domain.NotificationRequest;
+import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
 import com.liveklass.demo.notification.sender.NotificationSender;
+import com.liveklass.demo.notification.service.NotificationProcessingService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,26 +28,26 @@ public class NotificationWorker {
     }
 
     public int processBatch(int limit) {
-        List<NotificationRequest> candidates = processingService.findProcessable(limit);
+        List<NotificationDeliveryJob> candidates = processingService.findProcessable(limit);
         int processed = 0;
-        for (NotificationRequest candidate : candidates) {
-            if (processOne(candidate.getId())) {
+        for (NotificationDeliveryJob candidate : candidates) {
+            if (processOne(candidate.getRequestId())) {
                 processed++;
             }
         }
         return processed;
     }
 
-    public boolean processOne(Long id) {
-        if (!processingService.claim(id, workerId)) {
+    public boolean processOne(Long requestId) {
+        if (!processingService.claim(requestId, workerId)) {
             return false;
         }
-        NotificationRequest request = processingService.loadClaimed(id, workerId);
+        NotificationDeliveryJob job = processingService.loadClaimed(requestId, workerId);
         try {
-            sender.send(request);
-            processingService.markSent(id, workerId);
+            sender.send(job.getRequest());
+            processingService.markSent(requestId, workerId);
         } catch (Exception failure) {
-            processingService.recordFailure(id, workerId, failure);
+            processingService.recordFailure(requestId, workerId, failure);
         }
         return true;
     }

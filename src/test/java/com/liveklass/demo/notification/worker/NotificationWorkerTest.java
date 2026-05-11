@@ -2,13 +2,17 @@ package com.liveklass.demo.notification.worker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.liveklass.demo.notification.service.NotificationProcessingService;
 import com.liveklass.demo.notification.domain.NotificationChannel;
+import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
+import com.liveklass.demo.notification.domain.NotificationInbox;
 import com.liveklass.demo.notification.domain.NotificationRequest;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.sender.NotificationSender;
+import com.liveklass.demo.notification.service.NotificationProcessingService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,39 +30,48 @@ class NotificationWorkerTest {
     private NotificationProcessingService processingService;
 
     @Autowired
-    private NotificationRequestRepository repository;
+    private NotificationRequestRepository requestRepository;
+
+    @Autowired
+    private NotificationDeliveryJobRepository jobRepository;
+
+    @Autowired
+    private NotificationInboxRepository inboxRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void clean() {
-        repository.deleteAll();
+        inboxRepository.deleteAll();
+        jobRepository.deleteAll();
+        requestRepository.deleteAll();
     }
 
     @Test
-    void workerSuccessMovesRequestedToSent() {
-        NotificationRequest saved = repository.saveAndFlush(request("success"));
+    void workerSuccessMovesRequestedDeliveryJobToSent() {
+        NotificationDeliveryJob saved = job("success");
         RecordingSender sender = new RecordingSender(false);
         NotificationWorker worker = new NotificationWorker(processingService, sender);
 
         int processed = worker.processBatch(10);
 
-        NotificationRequest result = repository.findById(saved.getId()).orElseThrow();
+        NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
         assertThat(processed).isEqualTo(1);
-        assertThat(sender.sentIds).containsExactly(saved.getId());
+        assertThat(sender.sentIds).containsExactly(saved.getRequestId());
         assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
         assertThat(result.getSentAt()).isNotNull();
+        assertThat(result.getLockedBy()).isNull();
     }
 
     @Test
-    void retryableFailureStoresReasonAndSchedulesNextRetry() {
-        NotificationRequest saved = repository.saveAndFlush(request("retry"));
+    void retryableFailureStoresReasonAndSchedulesNextRetryOnDeliveryJob() {
+        NotificationDeliveryJob saved = job("retry");
         NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
 
         worker.processBatch(10);
 
-        NotificationRequest result = repository.findById(saved.getId()).orElseThrow();
+        NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
         assertThat(result.getStatus()).isEqualTo(NotificationStatus.RETRY_WAITING);
         assertThat(result.getRetryCount()).isEqualTo(1);
         assertThat(result.getLastFailureReason()).isEqualTo("temporary sender failure");
@@ -67,15 +80,15 @@ class NotificationWorkerTest {
     }
 
     @Test
-    void exhaustedRetryMovesToFailedAndKeepsFailureReason() {
-        NotificationRequest retryExhausted = request("failed");
+    void exhaustedRetryMovesDeliveryJobToFailedAndKeepsFailureReason() {
+        NotificationDeliveryJob retryExhausted = job("failed");
         retryExhausted.markRetryWaiting(3, "previous", Instant.now().minusSeconds(1));
-        NotificationRequest saved = repository.saveAndFlush(retryExhausted);
+        jobRepository.saveAndFlush(retryExhausted);
         NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
 
         worker.processBatch(10);
 
-        NotificationRequest result = repository.findById(saved.getId()).orElseThrow();
+        NotificationDeliveryJob result = jobRepository.findById(retryExhausted.getRequestId()).orElseThrow();
         assertThat(result.getStatus()).isEqualTo(NotificationStatus.FAILED);
         assertThat(result.getRetryCount()).isEqualTo(3);
         assertThat(result.getLastFailureReason()).isEqualTo("temporary sender failure");
@@ -85,37 +98,36 @@ class NotificationWorkerTest {
 
     @Test
     void unclaimedWorkerDoesNotSend() {
-        NotificationRequest saved = repository.saveAndFlush(request("claimed-once"));
-        boolean claimed = processingService.claim(saved.getId(), "worker-a");
+        NotificationDeliveryJob saved = job("claimed-once");
+        boolean claimed = processingService.claim(saved.getRequestId(), "worker-a");
         RecordingSender sender = new RecordingSender(false);
         NotificationWorker worker = new NotificationWorker(processingService, sender);
 
-        boolean processed = worker.processOne(saved.getId());
+        boolean processed = worker.processOne(saved.getRequestId());
 
         assertThat(claimed).isTrue();
         assertThat(processed).isFalse();
         assertThat(sender.sentIds).isEmpty();
     }
 
-
     @Test
     void staleWorkerCannotOverwriteAfterAnotherWorkerReclaimsLock() {
         Instant now = Instant.now();
-        NotificationRequest saved = repository.saveAndFlush(request("stale-owner"));
-        claimInTransaction(saved.getId(), "worker-a", now, now.minusSeconds(1));
-        claimInTransaction(saved.getId(), "worker-b", now, now.plusSeconds(600));
+        NotificationDeliveryJob saved = job("stale-owner");
+        claimInTransaction(saved.getRequestId(), "worker-a", now, now.minusSeconds(1));
+        claimInTransaction(saved.getRequestId(), "worker-b", now, now.plusSeconds(600));
 
-        boolean staleCompletion = processingService.markSent(saved.getId(), "worker-a");
-        boolean currentCompletion = processingService.markSent(saved.getId(), "worker-b");
+        boolean staleCompletion = processingService.markSent(saved.getRequestId(), "worker-a");
+        boolean currentCompletion = processingService.markSent(saved.getRequestId(), "worker-b");
 
-        NotificationRequest result = repository.findById(saved.getId()).orElseThrow();
+        NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
         assertThat(staleCompletion).isFalse();
         assertThat(currentCompletion).isTrue();
         assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
     }
 
     private void claimInTransaction(Long id, String workerId, Instant now, Instant lockedUntil) {
-        new TransactionTemplate(transactionManager).executeWithoutResult(status -> repository.claimForProcessing(
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> jobRepository.claimForProcessing(
                 id,
                 workerId,
                 lockedUntil,
@@ -126,15 +138,18 @@ class NotificationWorkerTest {
         ));
     }
 
-    private NotificationRequest request(String eventId) {
-        return new NotificationRequest(
+    private NotificationDeliveryJob job(String eventId) {
+        NotificationRequest request = requestRepository.saveAndFlush(new NotificationRequest(
                 "user-1",
                 NotificationType.PAYMENT_CONFIRMED,
                 NotificationChannel.EMAIL,
                 eventId,
                 "title",
                 "message"
-        );
+        ));
+        NotificationDeliveryJob job = jobRepository.saveAndFlush(new NotificationDeliveryJob(request));
+        inboxRepository.saveAndFlush(new NotificationInbox(request));
+        return job;
     }
 
     private static class RecordingSender implements NotificationSender {

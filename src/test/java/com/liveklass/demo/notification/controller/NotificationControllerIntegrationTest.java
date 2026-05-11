@@ -12,6 +12,8 @@ import tools.jackson.databind.ObjectMapper;
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.dto.NotificationCreateRequest;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,8 +37,16 @@ class NotificationControllerIntegrationTest {
     @Autowired
     private NotificationRequestRepository repository;
 
+    @Autowired
+    private NotificationDeliveryJobRepository deliveryJobRepository;
+
+    @Autowired
+    private NotificationInboxRepository inboxRepository;
+
     @BeforeEach
     void clean() {
+        inboxRepository.deleteAll();
+        deliveryJobRepository.deleteAll();
         repository.deleteAll();
     }
 
@@ -64,6 +74,8 @@ class NotificationControllerIntegrationTest {
         long secondId = objectMapper.readTree(second.getResponse().getContentAsString()).get("id").asLong();
         assertThat(secondId).isEqualTo(firstId);
         assertThat(repository.count()).isEqualTo(1);
+        assertThat(deliveryJobRepository.count()).isEqualTo(1);
+        assertThat(inboxRepository.count()).isEqualTo(1);
     }
 
     @Test

@@ -1,9 +1,12 @@
 package com.liveklass.demo.notification.dto;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
+import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
+import com.liveklass.demo.notification.domain.NotificationInbox;
 import com.liveklass.demo.notification.domain.NotificationRequest;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.service.NotificationDetails;
 import java.time.Instant;
 
 public record NotificationResponse(
@@ -26,7 +29,10 @@ public record NotificationResponse(
         Instant sentAt,
         Instant failedAt
 ) {
-    public static NotificationResponse from(NotificationRequest request) {
+    public static NotificationResponse from(NotificationDetails details) {
+        NotificationRequest request = details.request();
+        NotificationDeliveryJob deliveryJob = details.deliveryJob();
+        NotificationInbox inbox = details.inbox();
         return new NotificationResponse(
                 request.getId(),
                 request.getRecipientId(),
@@ -35,17 +41,17 @@ public record NotificationResponse(
                 request.getEventId(),
                 request.getTitle(),
                 request.getMessage(),
-                request.getStatus(),
-                request.getRetryCount(),
-                request.getLastFailureReason(),
-                request.getNextRetryAt(),
-                request.getReadAt() != null,
-                request.getReadAt(),
+                deliveryJob.getStatus(),
+                deliveryJob.getRetryCount(),
+                deliveryJob.getLastFailureReason(),
+                deliveryJob.getNextRetryAt(),
+                inbox.getReadAt() != null,
+                inbox.getReadAt(),
                 request.getCreatedAt(),
-                request.getUpdatedAt(),
-                request.getProcessingStartedAt(),
-                request.getSentAt(),
-                request.getFailedAt()
+                deliveryJob.getUpdatedAt(),
+                deliveryJob.getProcessingStartedAt(),
+                deliveryJob.getSentAt(),
+                deliveryJob.getFailedAt()
         );
     }
 }

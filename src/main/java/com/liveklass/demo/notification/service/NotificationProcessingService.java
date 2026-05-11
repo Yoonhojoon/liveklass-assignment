@@ -1,8 +1,8 @@
 package com.liveklass.demo.notification.service;
 
-import com.liveklass.demo.notification.domain.NotificationRequest;
+import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
 import com.liveklass.demo.notification.domain.NotificationStatus;
-import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -16,18 +16,18 @@ public class NotificationProcessingService {
 
     private static final Duration LOCK_TTL = Duration.ofMinutes(10);
 
-    private final NotificationRequestRepository repository;
+    private final NotificationDeliveryJobRepository repository;
     private final RetryPolicy retryPolicy;
     private final Clock clock;
 
-    public NotificationProcessingService(NotificationRequestRepository repository, RetryPolicy retryPolicy, Clock clock) {
+    public NotificationProcessingService(NotificationDeliveryJobRepository repository, RetryPolicy retryPolicy, Clock clock) {
         this.repository = repository;
         this.retryPolicy = retryPolicy;
         this.clock = clock;
     }
 
     @Transactional(readOnly = true)
-    public List<NotificationRequest> findProcessable(int limit) {
+    public List<NotificationDeliveryJob> findProcessable(int limit) {
         return repository.findProcessable(
                 Instant.now(clock),
                 NotificationStatus.REQUESTED,
@@ -38,10 +38,10 @@ public class NotificationProcessingService {
     }
 
     @Transactional
-    public boolean claim(Long id, String workerId) {
+    public boolean claim(Long requestId, String workerId) {
         Instant now = Instant.now(clock);
         int updated = repository.claimForProcessing(
-                id,
+                requestId,
                 workerId,
                 now.plus(LOCK_TTL),
                 now,
@@ -52,38 +52,38 @@ public class NotificationProcessingService {
         return updated == 1;
     }
 
-    @Transactional
-    public NotificationRequest loadClaimed(Long id, String workerId) {
-        return repository.findByIdAndStatusAndLockedBy(id, NotificationStatus.PROCESSING, workerId)
-                .orElseThrow(() -> new NotificationNotFoundException(id));
+    @Transactional(readOnly = true)
+    public NotificationDeliveryJob loadClaimed(Long requestId, String workerId) {
+        return repository.findClaimedWithRequest(requestId, NotificationStatus.PROCESSING, workerId)
+                .orElseThrow(() -> new NotificationNotFoundException(requestId));
     }
 
     @Transactional
-    public boolean markSent(Long id, String workerId) {
-        return repository.findByIdAndStatusAndLockedBy(id, NotificationStatus.PROCESSING, workerId)
-                .map(request -> {
-                    request.markSent(Instant.now(clock));
+    public boolean markSent(Long requestId, String workerId) {
+        return repository.findByRequestIdAndStatusAndLockedBy(requestId, NotificationStatus.PROCESSING, workerId)
+                .map(job -> {
+                    job.markSent(Instant.now(clock));
                     return true;
                 })
                 .orElse(false);
     }
 
     @Transactional
-    public boolean recordFailure(Long id, String workerId, Exception failure) {
-        return repository.findByIdAndStatusAndLockedBy(id, NotificationStatus.PROCESSING, workerId)
-                .map(request -> recordOwnedFailure(request, failure))
+    public boolean recordFailure(Long requestId, String workerId, Exception failure) {
+        return repository.findByRequestIdAndStatusAndLockedBy(requestId, NotificationStatus.PROCESSING, workerId)
+                .map(job -> recordOwnedFailure(job, failure))
                 .orElse(false);
     }
 
-    private boolean recordOwnedFailure(NotificationRequest request, Exception failure) {
+    private boolean recordOwnedFailure(NotificationDeliveryJob job, Exception failure) {
         String reason = trimFailureReason(failure);
         Instant now = Instant.now(clock);
-        if (retryPolicy.retryExhaustedBeforeNextAttempt(request.getRetryCount())) {
-            request.markFailed(request.getRetryCount(), reason, now);
+        if (retryPolicy.retryExhaustedBeforeNextAttempt(job.getRetryCount())) {
+            job.markFailed(job.getRetryCount(), reason, now);
             return true;
         }
-        int nextRetryCount = request.getRetryCount() + 1;
-        request.markRetryWaiting(nextRetryCount, reason, now.plus(retryPolicy.backoffForRetryCount(nextRetryCount)));
+        int nextRetryCount = job.getRetryCount() + 1;
+        job.markRetryWaiting(nextRetryCount, reason, now.plus(retryPolicy.backoffForRetryCount(nextRetryCount)));
         return true;
     }
 
