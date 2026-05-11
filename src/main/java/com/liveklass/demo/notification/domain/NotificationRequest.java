@@ -13,7 +13,12 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Entity
 @Table(
         name = "notification_request",
@@ -90,9 +95,6 @@ public class NotificationRequest {
     @Column(name = "failed_at")
     private Instant failedAt;
 
-    protected NotificationRequest() {
-    }
-
     public NotificationRequest(String recipientId, NotificationType notificationType, NotificationChannel channel,
             String eventId, String title, String message) {
         this.recipientId = recipientId;
@@ -153,79 +155,4 @@ public class NotificationRequest {
         lockedUntil = null;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getRecipientId() {
-        return recipientId;
-    }
-
-    public NotificationType getNotificationType() {
-        return notificationType;
-    }
-
-    public NotificationChannel getChannel() {
-        return channel;
-    }
-
-    public String getEventId() {
-        return eventId;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public NotificationStatus getStatus() {
-        return status;
-    }
-
-    public int getRetryCount() {
-        return retryCount;
-    }
-
-    public String getLastFailureReason() {
-        return lastFailureReason;
-    }
-
-    public Instant getNextRetryAt() {
-        return nextRetryAt;
-    }
-
-    public String getLockedBy() {
-        return lockedBy;
-    }
-
-    public Instant getLockedUntil() {
-        return lockedUntil;
-    }
-
-    public Instant getReadAt() {
-        return readAt;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public Instant getProcessingStartedAt() {
-        return processingStartedAt;
-    }
-
-    public Instant getSentAt() {
-        return sentAt;
-    }
-
-    public Instant getFailedAt() {
-        return failedAt;
-    }
 }
