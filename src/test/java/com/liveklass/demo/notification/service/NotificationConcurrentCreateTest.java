@@ -18,10 +18,12 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+@DisplayName("알림 동시 생성 테스트")
 @SpringBootTest(properties = "notification.worker.enabled=false")
 class NotificationConcurrentCreateTest {
 
@@ -45,6 +47,7 @@ class NotificationConcurrentCreateTest {
     }
 
     @Test
+    @DisplayName("동시에 같은 이벤트를 요청해도 요청, 작업, 알림함은 하나만 생성된다")
     void concurrentDuplicateCreateReturnsSameExistingRequest() throws Exception {
         int attempts = 8;
         ExecutorService executor = Executors.newFixedThreadPool(attempts);

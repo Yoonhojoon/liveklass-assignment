@@ -17,12 +17,15 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+@DisplayName("알림 워커 테스트")
 @SpringBootTest(properties = "notification.worker.enabled=false")
 class NotificationWorkerTest {
 
@@ -48,82 +51,102 @@ class NotificationWorkerTest {
         requestRepository.deleteAll();
     }
 
-    @Test
-    void workerSuccessMovesRequestedDeliveryJobToSent() {
-        NotificationDeliveryJob saved = job("success");
-        RecordingSender sender = new RecordingSender(false);
-        NotificationWorker worker = new NotificationWorker(processingService, sender);
+    @Nested
+    @DisplayName("발송 성공")
+    class SendSuccess {
 
-        int processed = worker.processBatch(10);
+        @Test
+        @DisplayName("요청된 발송 작업을 SENT로 전이하고 잠금을 해제한다")
+        void workerSuccessMovesRequestedDeliveryJobToSent() {
+            NotificationDeliveryJob saved = job("success");
+            RecordingSender sender = new RecordingSender(false);
+            NotificationWorker worker = new NotificationWorker(processingService, sender);
 
-        NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
-        assertThat(processed).isEqualTo(1);
-        assertThat(sender.sentIds).containsExactly(saved.getRequestId());
-        assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
-        assertThat(result.getSentAt()).isNotNull();
-        assertThat(result.getLockedBy()).isNull();
+            int processed = worker.processBatch(10);
+
+            NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
+            assertThat(processed).isEqualTo(1);
+            assertThat(sender.sentIds).containsExactly(saved.getRequestId());
+            assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
+            assertThat(result.getSentAt()).isNotNull();
+            assertThat(result.getLockedBy()).isNull();
+        }
     }
 
-    @Test
-    void retryableFailureStoresReasonAndSchedulesNextRetryOnDeliveryJob() {
-        NotificationDeliveryJob saved = job("retry");
-        NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
+    @Nested
+    @DisplayName("발송 실패")
+    class SendFailure {
 
-        worker.processBatch(10);
+        @Test
+        @DisplayName("재시도 가능한 실패는 실패 사유와 다음 재시도 시각을 저장한다")
+        void retryableFailureStoresReasonAndSchedulesNextRetryOnDeliveryJob() {
+            NotificationDeliveryJob saved = job("retry");
+            NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
 
-        NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
-        assertThat(result.getStatus()).isEqualTo(NotificationStatus.RETRY_WAITING);
-        assertThat(result.getRetryCount()).isEqualTo(1);
-        assertThat(result.getLastFailureReason()).isEqualTo("temporary sender failure");
-        assertThat(result.getNextRetryAt()).isNotNull();
-        assertThat(result.getLockedBy()).isNull();
+            worker.processBatch(10);
+
+            NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
+            assertThat(result.getStatus()).isEqualTo(NotificationStatus.RETRY_WAITING);
+            assertThat(result.getRetryCount()).isEqualTo(1);
+            assertThat(result.getLastFailureReason()).isEqualTo("temporary sender failure");
+            assertThat(result.getNextRetryAt()).isNotNull();
+            assertThat(result.getLockedBy()).isNull();
+        }
+
+        @Test
+        @DisplayName("재시도 한도에 도달한 실패는 FAILED로 전이한다")
+        void exhaustedRetryMovesDeliveryJobToFailedAndKeepsFailureReason() {
+            NotificationDeliveryJob retryExhausted = job("failed");
+            retryExhausted.markRetryWaiting(3, "previous", Instant.now().minusSeconds(1));
+            jobRepository.saveAndFlush(retryExhausted);
+            NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
+
+            worker.processBatch(10);
+
+            NotificationDeliveryJob result = jobRepository.findById(retryExhausted.getRequestId()).orElseThrow();
+            assertThat(result.getStatus()).isEqualTo(NotificationStatus.FAILED);
+            assertThat(result.getRetryCount()).isEqualTo(3);
+            assertThat(result.getLastFailureReason()).isEqualTo("temporary sender failure");
+            assertThat(result.getFailedAt()).isNotNull();
+            assertThat(result.getNextRetryAt()).isNull();
+        }
     }
 
-    @Test
-    void exhaustedRetryMovesDeliveryJobToFailedAndKeepsFailureReason() {
-        NotificationDeliveryJob retryExhausted = job("failed");
-        retryExhausted.markRetryWaiting(3, "previous", Instant.now().minusSeconds(1));
-        jobRepository.saveAndFlush(retryExhausted);
-        NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
+    @Nested
+    @DisplayName("워커 소유권")
+    class WorkerOwnership {
 
-        worker.processBatch(10);
+        @Test
+        @DisplayName("다른 워커가 점유한 작업은 발송하지 않는다")
+        void unclaimedWorkerDoesNotSend() {
+            NotificationDeliveryJob saved = job("claimed-once");
+            boolean claimed = processingService.claim(saved.getRequestId(), "worker-a");
+            RecordingSender sender = new RecordingSender(false);
+            NotificationWorker worker = new NotificationWorker(processingService, sender);
 
-        NotificationDeliveryJob result = jobRepository.findById(retryExhausted.getRequestId()).orElseThrow();
-        assertThat(result.getStatus()).isEqualTo(NotificationStatus.FAILED);
-        assertThat(result.getRetryCount()).isEqualTo(3);
-        assertThat(result.getLastFailureReason()).isEqualTo("temporary sender failure");
-        assertThat(result.getFailedAt()).isNotNull();
-        assertThat(result.getNextRetryAt()).isNull();
-    }
+            boolean processed = worker.processOne(saved.getRequestId());
 
-    @Test
-    void unclaimedWorkerDoesNotSend() {
-        NotificationDeliveryJob saved = job("claimed-once");
-        boolean claimed = processingService.claim(saved.getRequestId(), "worker-a");
-        RecordingSender sender = new RecordingSender(false);
-        NotificationWorker worker = new NotificationWorker(processingService, sender);
+            assertThat(claimed).isTrue();
+            assertThat(processed).isFalse();
+            assertThat(sender.sentIds).isEmpty();
+        }
 
-        boolean processed = worker.processOne(saved.getRequestId());
+        @Test
+        @DisplayName("잠금이 만료된 이전 워커는 재점유된 작업을 완료 처리하지 못한다")
+        void staleWorkerCannotOverwriteAfterAnotherWorkerReclaimsLock() {
+            Instant now = Instant.now();
+            NotificationDeliveryJob saved = job("stale-owner");
+            claimInTransaction(saved.getRequestId(), "worker-a", now, now.minusSeconds(1));
+            claimInTransaction(saved.getRequestId(), "worker-b", now, now.plusSeconds(600));
 
-        assertThat(claimed).isTrue();
-        assertThat(processed).isFalse();
-        assertThat(sender.sentIds).isEmpty();
-    }
+            boolean staleCompletion = processingService.markSent(saved.getRequestId(), "worker-a");
+            boolean currentCompletion = processingService.markSent(saved.getRequestId(), "worker-b");
 
-    @Test
-    void staleWorkerCannotOverwriteAfterAnotherWorkerReclaimsLock() {
-        Instant now = Instant.now();
-        NotificationDeliveryJob saved = job("stale-owner");
-        claimInTransaction(saved.getRequestId(), "worker-a", now, now.minusSeconds(1));
-        claimInTransaction(saved.getRequestId(), "worker-b", now, now.plusSeconds(600));
-
-        boolean staleCompletion = processingService.markSent(saved.getRequestId(), "worker-a");
-        boolean currentCompletion = processingService.markSent(saved.getRequestId(), "worker-b");
-
-        NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
-        assertThat(staleCompletion).isFalse();
-        assertThat(currentCompletion).isTrue();
-        assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
+            NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
+            assertThat(staleCompletion).isFalse();
+            assertThat(currentCompletion).isTrue();
+            assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
+        }
     }
 
     private void claimInTransaction(Long id, String workerId, Instant now, Instant lockedUntil) {
