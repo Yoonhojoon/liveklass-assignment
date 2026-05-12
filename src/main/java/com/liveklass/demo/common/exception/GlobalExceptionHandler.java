@@ -2,6 +2,7 @@ package com.liveklass.demo.common.exception;
 
 import com.liveklass.demo.common.response.CommonErrorStatus;
 import com.liveklass.demo.common.response.ErrorResponse;
+import com.liveklass.demo.notification.exception.NotificationException;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -11,6 +12,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(NotificationException.class)
+    ResponseEntity<ProblemDetail> handleNotificationException(NotificationException exception) {
+        return toProblemDetail(exception.getStatus(), exception.getMessage());
+    }
 
     @ExceptionHandler(GeneralException.class)
     ResponseEntity<ProblemDetail> handleGeneralException(GeneralException exception) {
