@@ -298,6 +298,27 @@ class NotificationControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("템플릿 enabled 요청에서 필드가 누락되면 400을 반환한다")
+        void missingEnabledFieldReturnsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/notification-templates/{notificationType}/{channel}",
+                            NotificationType.PAYMENT_CONFIRMED, NotificationChannel.EMAIL)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new NotificationTemplateUpsertRequest(
+                                    "안녕하세요 ${userName}",
+                                    "결제 금액은 ${amount}원입니다.",
+                                    true
+                            ))))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(patch("/api/notification-templates/{notificationType}/{channel}/enabled",
+                            NotificationType.PAYMENT_CONFIRMED, NotificationChannel.EMAIL)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("enabled is required"));
+        }
+
+        @Test
         @DisplayName("비활성 템플릿으로 생성하면 400을 반환한다")
         void disabledTemplateCreateReturnsBadRequest() throws Exception {
             mockMvc.perform(post("/api/notification-templates/{notificationType}/{channel}",

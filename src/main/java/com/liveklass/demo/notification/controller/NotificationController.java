@@ -115,7 +115,7 @@ public class NotificationController {
     public ApiResponse<NotificationTemplateResponse> setTemplateEnabled(
             @PathVariable NotificationType notificationType,
             @PathVariable NotificationChannel channel,
-            @RequestBody NotificationTemplateEnabledRequest request
+            @Valid @RequestBody NotificationTemplateEnabledRequest request
     ) {
         return ApiResponse.success(CommonSuccessStatus.OK,
                 NotificationTemplateResponse.from(templateService.setEnabled(notificationType, channel, request)));

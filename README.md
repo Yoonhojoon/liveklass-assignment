@@ -111,6 +111,13 @@ Content-Type: application/json
 
 `title`/`message` 직접 입력 모드와 `templateVariables` 템플릿 모드는 서로 배타적입니다.
 
+입력 검증은 두 계층으로 나눴습니다.
+
+- 요청 DTO 검증: HTTP 진입점에서 필수값/형식 오류를 빠르게 400으로 차단합니다.
+- 서비스 command 검증: 스케줄러, 배치, 내부 서비스 호출처럼 컨트롤러를 거치지 않는 경로도 동일한 규칙으로 보호합니다.
+
+즉, 컨트롤러의 Bean Validation은 사용자 요청 방어선이고, 서비스 계층의 Bean Validation은 애플리케이션 경계 방어선입니다.
+
 응답은 즉시 `202 Accepted`를 반환하며 실제 발송 성공 여부를 확정하지 않습니다. `scheduledAt` 이 있으면 inbox에는 즉시 보이지만 worker 발송만 예약 시각 이후로 지연됩니다.
 
 성공 응답은 공통 래퍼를 사용합니다.
