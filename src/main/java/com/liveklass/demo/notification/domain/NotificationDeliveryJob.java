@@ -86,16 +86,21 @@ public class NotificationDeliveryJob {
         this.scheduledAt = scheduledAt;
     }
 
-    @PrePersist
-    void prePersist() {
-        Instant now = Instant.now();
+    public void initializeTimestamps(Instant now) {
         createdAt = now;
         updatedAt = now;
     }
 
+    @PrePersist
+    void prePersist() {
+        if (createdAt == null || updatedAt == null) {
+            initializeTimestamps(NotificationTime.now());
+        }
+    }
+
     @PreUpdate
     void preUpdate() {
-        updatedAt = Instant.now();
+        updatedAt = NotificationTime.now();
     }
 
     public void markSent(Instant now) {
@@ -104,14 +109,16 @@ public class NotificationDeliveryJob {
         failedAt = null;
         nextRetryAt = null;
         lastFailureReason = null;
+        updatedAt = now;
         clearLock();
     }
 
-    public void markRetryWaiting(int nextRetryCount, String failureReason, Instant nextRetryAt) {
+    public void markRetryWaiting(int nextRetryCount, String failureReason, Instant nextRetryAt, Instant now) {
         status = NotificationStatus.RETRY_WAITING;
         retryCount = nextRetryCount;
         lastFailureReason = failureReason;
         this.nextRetryAt = nextRetryAt;
+        updatedAt = now;
         clearLock();
     }
 
@@ -121,6 +128,7 @@ public class NotificationDeliveryJob {
         lastFailureReason = failureReason;
         failedAt = now;
         nextRetryAt = null;
+        updatedAt = now;
         clearLock();
     }
 

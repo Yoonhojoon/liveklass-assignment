@@ -51,15 +51,21 @@ public class NotificationInbox {
         this.recipientId = request.getRecipientId();
     }
 
-    @PrePersist
-    void prePersist() {
-        Instant now = Instant.now();
+    public void initializeTimestamps(Instant now) {
         createdAt = now;
         updatedAt = now;
     }
 
+    @PrePersist
+    void prePersist() {
+        if (createdAt == null || updatedAt == null) {
+            initializeTimestamps(NotificationTime.now());
+        }
+    }
+
     @PreUpdate
     void preUpdate() {
-        updatedAt = Instant.now();
+        updatedAt = NotificationTime.now();
     }
+
 }

@@ -66,14 +66,14 @@ public class NotificationTemplate {
 
     @PrePersist
     void prePersist() {
-        Instant now = Instant.now();
+        Instant now = NotificationTime.now();
         createdAt = now;
         updatedAt = now;
     }
 
     @PreUpdate
     void preUpdate() {
-        updatedAt = Instant.now();
+        updatedAt = NotificationTime.now();
     }
 
     public void update(String titleTemplate, String messageTemplate, boolean enabled) {

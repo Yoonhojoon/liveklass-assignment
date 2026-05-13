@@ -88,10 +88,10 @@ class NotificationDeliveryJobRepositoryTest {
             Instant now = Instant.now();
             NotificationDeliveryJob requested = job("requested");
             NotificationDeliveryJob dueRetry = job("due-retry");
-            dueRetry.markRetryWaiting(1, "temporary", now.minusSeconds(1));
+            dueRetry.markRetryWaiting(1, "temporary", now.minusSeconds(1), now);
             jobRepository.save(dueRetry);
             NotificationDeliveryJob nonDueRetry = job("non-due-retry");
-            nonDueRetry.markRetryWaiting(1, "temporary", now.plusSeconds(60));
+            nonDueRetry.markRetryWaiting(1, "temporary", now.plusSeconds(60), now);
             jobRepository.save(nonDueRetry);
             NotificationDeliveryJob stale = job("stale");
             claim(stale.getRequestId(), "worker-stale", now, now.minusSeconds(1));

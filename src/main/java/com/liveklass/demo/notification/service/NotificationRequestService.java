@@ -100,16 +100,25 @@ public class NotificationRequestService {
     private NotificationCreateResult saveNewOrReturnDuplicate(NotificationCreateCommand command, TemplateRenderResult content) {
         try {
             NotificationDetails created = insertTransaction.execute(status -> {
-                NotificationRequest request = requestRepository.saveAndFlush(new NotificationRequest(
+                Instant now = Instant.now(clock);
+                NotificationRequest request = new NotificationRequest(
                         command.recipientId(),
                         command.notificationType(),
                         command.channel(),
                         command.eventId(),
                         content.title(),
                         content.message()
-                ));
-                NotificationDeliveryJob deliveryJob = deliveryJobRepository.saveAndFlush(new NotificationDeliveryJob(request, command.scheduledAt()));
-                NotificationInbox inbox = inboxRepository.saveAndFlush(new NotificationInbox(request));
+                );
+                request.initializeTimestamps(now);
+                request = requestRepository.saveAndFlush(request);
+
+                NotificationDeliveryJob deliveryJob = new NotificationDeliveryJob(request, command.scheduledAt());
+                deliveryJob.initializeTimestamps(now);
+                deliveryJob = deliveryJobRepository.saveAndFlush(deliveryJob);
+
+                NotificationInbox inbox = new NotificationInbox(request);
+                inbox.initializeTimestamps(now);
+                inbox = inboxRepository.saveAndFlush(inbox);
                 return details(request, deliveryJob, inbox);
             });
             return new NotificationCreateResult(created, false);
