@@ -11,7 +11,6 @@ import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.dto.NotificationRetryRequest;
 import com.liveklass.demo.notification.domain.NotificationType;
-import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.dto.NotificationTemplateEnabledRequest;
 import com.liveklass.demo.notification.dto.NotificationTemplateUpsertRequest;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
@@ -19,6 +18,7 @@ import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,7 +114,7 @@ class NotificationControllerIntegrationTest {
         @Test
         @DisplayName("잘못된 요청은 ProblemDetail 형식의 에러 응답을 반환한다")
         void invalidRequestReturnsProblemDetailError() throws Exception {
-            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String body = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -138,7 +138,7 @@ class NotificationControllerIntegrationTest {
         @Test
         @DisplayName("필수 enum 값이 없으면 ProblemDetail 형식의 에러 응답을 반환한다")
         void nullEnumRequestReturnsProblemDetailError() throws Exception {
-            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String body = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     null,
                     NotificationChannel.EMAIL,
@@ -219,7 +219,7 @@ class NotificationControllerIntegrationTest {
         @DisplayName("예약 알림은 scheduledAt을 노출하고 inbox에 즉시 보인다")
         void scheduledNotificationExposesScheduledAtAndIsVisibleInInbox() throws Exception {
             Instant scheduledAt = Instant.parse("2026-05-14T09:00:00Z");
-            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String body = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -272,7 +272,7 @@ class NotificationControllerIntegrationTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.enabled").value(true));
 
-            String createBody = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String createBody = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -331,7 +331,7 @@ class NotificationControllerIntegrationTest {
                             ))))
                     .andExpect(status().isOk());
 
-            String createBody = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String createBody = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -494,8 +494,8 @@ class NotificationControllerIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("data").get("id").asLong();
     }
 
-    private NotificationCreateRequest request(String eventId) {
-        return new NotificationCreateRequest(
+    private NotificationCreateCommand request(String eventId) {
+        return new NotificationCreateCommand(
                 "user-1",
                 NotificationType.PAYMENT_CONFIRMED,
                 NotificationChannel.EMAIL,
