@@ -59,8 +59,13 @@ public class NotificationController {
     }
 
     @GetMapping("/users/{recipientId}/notifications")
-    public ApiResponse<List<NotificationResponse>> list(@PathVariable String recipientId, @RequestParam(required = false) Boolean read) {
-        List<NotificationResponse> notifications = service.listForRecipient(recipientId, read).stream()
+    public ApiResponse<List<NotificationResponse>> list(
+            @PathVariable String recipientId,
+            @RequestParam(required = false) Boolean read,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        List<NotificationResponse> notifications = service.listForRecipient(recipientId, read, page, size).stream()
                 .map(NotificationResponse::from)
                 .toList();
         return ApiResponse.success(CommonSuccessStatus.OK, notifications);

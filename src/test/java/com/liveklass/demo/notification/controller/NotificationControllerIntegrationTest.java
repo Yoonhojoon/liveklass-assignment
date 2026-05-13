@@ -465,6 +465,35 @@ class NotificationControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("수신자 목록은 page와 size로 조회 범위를 제한한다")
+        void userListSupportsPageAndSizeLimit() throws Exception {
+            create("payment-page-1");
+            create("payment-page-2");
+            create("payment-page-3");
+
+            mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1")
+                            .param("page", "0")
+                            .param("size", "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(2));
+
+            mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1")
+                            .param("page", "1")
+                            .param("size", "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(1));
+        }
+
+        @Test
+        @DisplayName("수신자 목록 size는 최대값을 넘을 수 없다")
+        void userListRejectsTooLargeSize() throws Exception {
+            mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1")
+                            .param("size", "101"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("size must be between 1 and 100"));
+        }
+
+        @Test
         @DisplayName("읽음 처리는 멱등이고 최초 읽음 시각을 보존한다")
         void readEndpointIsIdempotentAndPreservesFirstReadAt() throws Exception {
             long id = create("payment-read-idempotent");
