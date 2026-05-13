@@ -129,26 +129,7 @@ public class NotificationRequestService {
     }
 
     private NotificationDetails details(NotificationRequest request, NotificationDeliveryJob deliveryJob, NotificationInbox inbox) {
-        return new NotificationDetails(
-                request.getId(),
-                request.getRecipientId(),
-                request.getNotificationType(),
-                request.getChannel(),
-                request.getEventId(),
-                request.getTitle(),
-                request.getMessage(),
-                deliveryJob.getStatus(),
-                deliveryJob.getRetryCount(),
-                deliveryJob.getLastFailureReason(),
-                deliveryJob.getNextRetryAt(),
-                inbox.getReadAt() != null,
-                inbox.getReadAt(),
-                request.getCreatedAt(),
-                deliveryJob.getUpdatedAt(),
-                deliveryJob.getProcessingStartedAt(),
-                deliveryJob.getSentAt(),
-                deliveryJob.getFailedAt()
-        );
+        return NotificationDetails.from(request, deliveryJob, inbox);
     }
 
     private void requireCommand(NotificationCreateCommand command) {
