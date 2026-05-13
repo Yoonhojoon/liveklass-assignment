@@ -11,7 +11,7 @@ public class LogNotificationSender implements NotificationSender {
 
     @Override
     public void send(NotificationSendCommand command) {
-        log.info("notification sent id={} recipientId={} type={} channel={} eventId={}",
+        log.info("[NOTIFICATION][SENDER] notification sent id={} recipientId={} type={} channel={} eventId={}",
                 command.id(), command.recipientId(), command.notificationType(),
                 command.channel(), command.eventId());
     }

@@ -37,14 +37,14 @@ public class NotificationWorker {
     @Scheduled(fixedDelayString = "${notification.worker.poll-delay-ms:${notification.worker.pollDelayMs:5000}}")
     public void poll() {
         int batchSize = properties.getWorker().getBatchSize();
-        log.debug("notification worker poll started workerId={} batchSize={}", workerId, batchSize);
+        log.debug("[NOTIFICATION][WORKER] notification worker poll started workerId={} batchSize={}", workerId, batchSize);
         int processed = processBatch(batchSize);
-        log.debug("notification worker poll finished workerId={} processed={}", workerId, processed);
+        log.debug("[NOTIFICATION][WORKER] notification worker poll finished workerId={} processed={}", workerId, processed);
     }
 
     public int processBatch(int limit) {
         List<NotificationDeliveryJob> candidates = processingService.findProcessable(limit);
-        log.debug("notification worker candidates loaded workerId={} candidates={}", workerId, candidates.size());
+        log.debug("[NOTIFICATION][WORKER] notification worker candidates loaded workerId={} candidates={}", workerId, candidates.size());
         int processed = 0;
         for (NotificationDeliveryJob candidate : candidates) {
             if (processOne(candidate.getRequestId())) {
@@ -57,7 +57,7 @@ public class NotificationWorker {
     public boolean processOne(Long requestId) {
         if (!processingService.claim(requestId, workerId)) {
             metrics.claimSkipped();
-            log.info("notification worker claim skipped workerId={} requestId={}", workerId, requestId);
+            log.info("[NOTIFICATION][WORKER] notification worker claim skipped workerId={} requestId={}", workerId, requestId);
             return false;
         }
         NotificationDeliveryJob job = processingService.loadClaimed(requestId, workerId);
@@ -65,17 +65,17 @@ public class NotificationWorker {
             sender.send(NotificationSendCommand.from(job.getRequest()));
             if (processingService.markSent(requestId, workerId)) {
                 metrics.sent();
-                log.info("notification sent workerId={} requestId={}", workerId, requestId);
+                log.info("[NOTIFICATION][WORKER] notification sent workerId={} requestId={}", workerId, requestId);
             }
         } catch (Exception failure) {
             FailureHandlingResult result = processingService.recordFailure(requestId, workerId, failure);
             if (result == FailureHandlingResult.RETRY_SCHEDULED) {
                 metrics.retryScheduled();
-                log.warn("notification retry scheduled workerId={} requestId={} reason={}",
+                log.warn("[NOTIFICATION][WORKER] notification retry scheduled workerId={} requestId={} reason={}",
                         workerId, requestId, failure.getMessage());
             } else if (result == FailureHandlingResult.FAILED) {
                 metrics.failed();
-                log.error("notification finally failed workerId={} requestId={} reason={}",
+                log.error("[NOTIFICATION][WORKER] notification finally failed workerId={} requestId={} reason={}",
                         workerId, requestId, failure.getMessage());
             }
         }
