@@ -31,17 +31,20 @@ public class NotificationRequestService {
     private final NotificationRequestRepository requestRepository;
     private final NotificationDeliveryJobRepository deliveryJobRepository;
     private final NotificationInboxRepository inboxRepository;
+    private final NotificationTemplateService templateService;
     private final Clock clock;
     private final TransactionTemplate insertTransaction;
 
     public NotificationRequestService(NotificationRequestRepository requestRepository,
             NotificationDeliveryJobRepository deliveryJobRepository,
             NotificationInboxRepository inboxRepository,
+            NotificationTemplateService templateService,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.requestRepository = requestRepository;
         this.deliveryJobRepository = deliveryJobRepository;
         this.inboxRepository = inboxRepository;
+        this.templateService = templateService;
         this.clock = clock;
         this.insertTransaction = new TransactionTemplate(transactionManager);
         this.insertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -53,7 +56,7 @@ public class NotificationRequestService {
         return requestRepository.findByRecipientIdAndNotificationTypeAndChannelAndEventId(
                         command.recipientId(), command.notificationType(), command.channel(), command.eventId())
                 .map(existing -> new NotificationCreateResult(details(existing), true))
-                .orElseGet(() -> saveNewOrReturnDuplicate(command));
+                .orElseGet(() -> saveNewOrReturnDuplicate(command, resolveContent(command)));
     }
 
     @Transactional(readOnly = true)
@@ -93,7 +96,7 @@ public class NotificationRequestService {
         return details(inbox.getRequest(), inbox);
     }
 
-    private NotificationCreateResult saveNewOrReturnDuplicate(NotificationCreateCommand command) {
+    private NotificationCreateResult saveNewOrReturnDuplicate(NotificationCreateCommand command, TemplateRenderResult content) {
         try {
             NotificationDetails created = insertTransaction.execute(status -> {
                 NotificationRequest request = requestRepository.saveAndFlush(new NotificationRequest(
@@ -101,10 +104,10 @@ public class NotificationRequestService {
                         command.notificationType(),
                         command.channel(),
                         command.eventId(),
-                        command.title(),
-                        command.message()
+                        content.title(),
+                        content.message()
                 ));
-                NotificationDeliveryJob deliveryJob = deliveryJobRepository.saveAndFlush(new NotificationDeliveryJob(request));
+                NotificationDeliveryJob deliveryJob = deliveryJobRepository.saveAndFlush(new NotificationDeliveryJob(request, command.scheduledAt()));
                 NotificationInbox inbox = inboxRepository.saveAndFlush(new NotificationInbox(request));
                 return details(request, deliveryJob, inbox);
             });
@@ -139,5 +142,24 @@ public class NotificationRequestService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private TemplateRenderResult resolveContent(NotificationCreateCommand command) {
+        boolean hasDirect = !isBlank(command.title()) || !isBlank(command.message());
+        boolean hasTemplate = command.templateVariables() != null && !command.templateVariables().isEmpty();
+        if (hasDirect == hasTemplate) {
+            throw new NotificationValidationException("provide either title/message or templateVariables");
+        }
+        if (hasDirect) {
+            if (isBlank(command.title())) {
+                throw new NotificationValidationException("title is required");
+            }
+            if (isBlank(command.message())) {
+                throw new NotificationValidationException("message is required");
+            }
+            NotificationTemplateService.validateRenderedLength(command.title(), command.message());
+            return new TemplateRenderResult(command.title(), command.message());
+        }
+        return templateService.render(command.notificationType(), command.channel(), command.templateVariables());
     }
 }

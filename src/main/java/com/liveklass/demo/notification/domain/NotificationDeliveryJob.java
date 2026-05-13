@@ -25,7 +25,8 @@ import lombok.NoArgsConstructor;
         name = "notification_delivery_job",
         indexes = {
                 @Index(name = "idx_notification_job_status_retry", columnList = "status,next_retry_at"),
-                @Index(name = "idx_notification_job_status_lock", columnList = "status,locked_until")
+                @Index(name = "idx_notification_job_status_lock", columnList = "status,locked_until"),
+                @Index(name = "idx_notification_job_status_scheduled", columnList = "status,scheduled_at")
         }
 )
 public class NotificationDeliveryJob {
@@ -52,6 +53,9 @@ public class NotificationDeliveryJob {
     @Column(name = "next_retry_at")
     private Instant nextRetryAt;
 
+    @Column(name = "scheduled_at")
+    private Instant scheduledAt;
+
     @Column(name = "locked_by", length = 100)
     private String lockedBy;
 
@@ -75,6 +79,11 @@ public class NotificationDeliveryJob {
 
     public NotificationDeliveryJob(NotificationRequest request) {
         this.request = request;
+    }
+
+    public NotificationDeliveryJob(NotificationRequest request, Instant scheduledAt) {
+        this.request = request;
+        this.scheduledAt = scheduledAt;
     }
 
     @PrePersist

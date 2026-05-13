@@ -4,6 +4,8 @@ import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.time.Instant;
+import java.util.Map;
 
 public record NotificationCreateCommand(
         @NotBlank(message = "recipientId is required")
@@ -18,10 +20,12 @@ public record NotificationCreateCommand(
         @NotBlank(message = "eventId is required")
         String eventId,
 
-        @NotBlank(message = "title is required")
         String title,
 
-        @NotBlank(message = "message is required")
-        String message
+        String message,
+
+        Map<String, String> templateVariables,
+
+        Instant scheduledAt
 ) {
 }
