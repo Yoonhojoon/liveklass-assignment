@@ -1,27 +1,30 @@
 package com.liveklass.demo.notification.service;
 
+import com.liveklass.demo.notification.config.NotificationProperties;
 import java.time.Duration;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RetryPolicy {
 
-    private static final int MAX_RETRIES = 3;
+    private final NotificationProperties properties;
+
+    public RetryPolicy(NotificationProperties properties) {
+        this.properties = properties;
+    }
 
     public int maxRetries() {
-        return MAX_RETRIES;
+        return properties.getRetry().getMaxRetries();
     }
 
     public boolean retryExhaustedBeforeNextAttempt(int retryCount) {
-        return retryCount >= MAX_RETRIES;
+        return retryCount >= maxRetries();
     }
 
     public Duration backoffForRetryCount(int retryCount) {
-        return switch (retryCount) {
-            case 1 -> Duration.ofMinutes(1);
-            case 2 -> Duration.ofMinutes(5);
-            case 3 -> Duration.ofMinutes(15);
-            default -> throw new IllegalArgumentException("Unsupported retry count: " + retryCount);
-        };
+        if (retryCount < 1 || retryCount > maxRetries()) {
+            throw new IllegalArgumentException("Unsupported retry count: " + retryCount);
+        }
+        return properties.getRetry().getBackoffs().get(retryCount - 1);
     }
 }

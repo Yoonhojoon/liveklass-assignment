@@ -20,6 +20,10 @@ public record NotificationDetails(
         int retryCount,
         String lastFailureReason,
         Instant nextRetryAt,
+        String lockedBy,
+        Instant lockedUntil,
+        boolean retryable,
+        boolean terminal,
         boolean read,
         Instant readAt,
         Instant createdAt,
@@ -43,6 +47,12 @@ public record NotificationDetails(
                 deliveryJob.getRetryCount(),
                 deliveryJob.getLastFailureReason(),
                 deliveryJob.getNextRetryAt(),
+                deliveryJob.getLockedBy(),
+                deliveryJob.getLockedUntil(),
+                deliveryJob.getStatus() == NotificationStatus.REQUESTED
+                        || deliveryJob.getStatus() == NotificationStatus.RETRY_WAITING,
+                deliveryJob.getStatus() == NotificationStatus.SENT
+                        || deliveryJob.getStatus() == NotificationStatus.FAILED,
                 readAt != null,
                 readAt,
                 request.getCreatedAt(),

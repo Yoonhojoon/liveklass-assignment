@@ -2,6 +2,7 @@ package com.liveklass.demo.notification.worker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.liveklass.demo.notification.config.NotificationProperties;
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
 import com.liveklass.demo.notification.domain.NotificationInbox;
@@ -17,6 +18,7 @@ import com.liveklass.demo.notification.service.NotificationProcessingService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -45,6 +47,9 @@ class NotificationWorkerTest {
     @Autowired
     private PlatformTransactionManager transactionManager;
 
+    private final NotificationProperties workerProperties = new NotificationProperties();
+    private final NotificationWorkerMetrics workerMetrics = new NotificationWorkerMetrics(new SimpleMeterRegistry());
+
     @BeforeEach
     void clean() {
         inboxRepository.deleteAll();
@@ -61,7 +66,7 @@ class NotificationWorkerTest {
         void workerSuccessMovesRequestedDeliveryJobToSent() {
             NotificationDeliveryJob saved = job("success");
             RecordingSender sender = new RecordingSender(false);
-            NotificationWorker worker = new NotificationWorker(processingService, sender);
+            NotificationWorker worker = worker(sender);
 
             int processed = worker.processBatch(10);
 
@@ -82,7 +87,7 @@ class NotificationWorkerTest {
         @DisplayName("재시도 가능한 실패는 실패 사유와 다음 재시도 시각을 저장한다")
         void retryableFailureStoresReasonAndSchedulesNextRetryOnDeliveryJob() {
             NotificationDeliveryJob saved = job("retry");
-            NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
+            NotificationWorker worker = worker(new RecordingSender(true));
 
             worker.processBatch(10);
 
@@ -100,7 +105,7 @@ class NotificationWorkerTest {
             NotificationDeliveryJob retryExhausted = job("failed");
             retryExhausted.markRetryWaiting(3, "previous", Instant.now().minusSeconds(1));
             jobRepository.saveAndFlush(retryExhausted);
-            NotificationWorker worker = new NotificationWorker(processingService, new RecordingSender(true));
+            NotificationWorker worker = worker(new RecordingSender(true));
 
             worker.processBatch(10);
 
@@ -123,7 +128,7 @@ class NotificationWorkerTest {
             NotificationDeliveryJob saved = job("claimed-once");
             boolean claimed = processingService.claim(saved.getRequestId(), "worker-a");
             RecordingSender sender = new RecordingSender(false);
-            NotificationWorker worker = new NotificationWorker(processingService, sender);
+            NotificationWorker worker = worker(sender);
 
             boolean processed = worker.processOne(saved.getRequestId());
 
@@ -147,6 +152,39 @@ class NotificationWorkerTest {
             assertThat(staleCompletion).isFalse();
             assertThat(currentCompletion).isTrue();
             assertThat(result.getStatus()).isEqualTo(NotificationStatus.SENT);
+        }
+    }
+
+    @Nested
+    @DisplayName("운영 설정")
+    class WorkerConfiguration {
+
+        @Test
+        @DisplayName("poll은 설정된 batch size만큼만 처리한다")
+        void pollUsesConfiguredBatchSize() {
+            job("batch-1");
+            job("batch-2");
+            workerProperties.getWorker().setBatchSize(1);
+            RecordingSender sender = new RecordingSender(false);
+            NotificationWorker worker = worker(sender);
+
+            worker.poll();
+
+            assertThat(sender.sentIds).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("claim은 설정된 lock TTL을 잠금 만료 시각에 반영한다")
+        void claimUsesConfiguredLockTtl() {
+            NotificationDeliveryJob saved = job("lock-ttl");
+            Instant before = Instant.now();
+
+            boolean claimed = processingService.claim(saved.getRequestId(), "worker-ttl");
+
+            Instant after = Instant.now();
+            NotificationDeliveryJob result = jobRepository.findById(saved.getRequestId()).orElseThrow();
+            assertThat(claimed).isTrue();
+            assertThat(result.getLockedUntil()).isBetween(before.plusSeconds(599), after.plusSeconds(601));
         }
     }
 
@@ -174,6 +212,10 @@ class NotificationWorkerTest {
         NotificationDeliveryJob job = jobRepository.saveAndFlush(new NotificationDeliveryJob(request));
         inboxRepository.saveAndFlush(new NotificationInbox(request));
         return job;
+    }
+
+    private NotificationWorker worker(RecordingSender sender) {
+        return new NotificationWorker(processingService, sender, workerProperties, workerMetrics);
     }
 
     private static class RecordingSender implements NotificationSender {
