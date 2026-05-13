@@ -35,6 +35,36 @@
 ./gradlew test
 ```
 
+## Docker Compose 실행
+
+회사 테스트나 데모처럼 실행 환경을 맞추고 싶을 때는 Docker Compose로 실행할 수 있습니다.
+
+```bash
+docker compose up --build
+```
+
+- 애플리케이션 포트: `http://localhost:8080`
+- H2 콘솔: `http://localhost:8080/h2-console`
+- JDBC URL: `jdbc:h2:file:./data/liveklass`
+- 사용자명: `sa`
+- 비밀번호: 없음
+
+Compose 실행 시 `docker` 프로필을 사용하며, `./data` 디렉터리를 컨테이너의 `/app/data`로 마운트합니다. 그래서 컨테이너를 내렸다가 다시 올려도 H2 파일 DB의 알림 요청, 발송 작업, 사용자 알림함 데이터가 유지됩니다.
+
+호스트 포트를 바꾸고 싶으면 `APP_PORT`를 지정합니다.
+
+```bash
+APP_PORT=18080 docker compose up --build
+```
+
+중지:
+
+```bash
+docker compose down
+```
+
+데이터까지 초기화하려면 컨테이너를 내린 뒤 `data` 디렉터리의 H2 파일을 삭제하고 다시 실행합니다.
+
 ## API 목록 및 예시
 
 ### 알림 요청 등록
