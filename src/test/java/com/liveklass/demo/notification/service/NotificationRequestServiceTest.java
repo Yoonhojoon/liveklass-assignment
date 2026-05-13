@@ -1,6 +1,7 @@
 package com.liveklass.demo.notification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
@@ -13,6 +14,7 @@ import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import com.liveklass.demo.notification.service.dto.NotificationDetails;
+import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -53,7 +55,7 @@ class NotificationRequestServiceTest {
             NotificationCreateResult result = service.create(command("event-1"));
 
             assertThat(result.duplicated()).isFalse();
-            Long id = result.notification().request().getId();
+            Long id = result.notification().id();
             NotificationDeliveryJob job = deliveryJobRepository.findById(id).orElseThrow();
             NotificationInbox inbox = inboxRepository.findById(id).orElseThrow();
             assertThat(requestRepository.count()).isEqualTo(1);
@@ -72,10 +74,27 @@ class NotificationRequestServiceTest {
             NotificationCreateResult second = service.create(command("event-1"));
 
             assertThat(second.duplicated()).isTrue();
-            assertThat(second.notification().request().getId()).isEqualTo(first.notification().request().getId());
+            assertThat(second.notification().id()).isEqualTo(first.notification().id());
             assertThat(requestRepository.count()).isEqualTo(1);
             assertThat(deliveryJobRepository.count()).isEqualTo(1);
             assertThat(inboxRepository.count()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("요청 생성 command는 Bean Validation으로 검증한다")
+        void invalidCommandIsValidated() {
+            NotificationCreateCommand invalid = new NotificationCreateCommand(
+                    "",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "event-invalid",
+                    "결제가 완료되었습니다",
+                    "결제 확정 알림입니다."
+            );
+
+            assertThatThrownBy(() -> service.create(invalid))
+                    .isInstanceOf(ConstraintViolationException.class)
+                    .hasMessageContaining("recipientId is required");
         }
     }
 
@@ -87,13 +106,13 @@ class NotificationRequestServiceTest {
         @DisplayName("읽음 처리는 멱등이고 최초 읽음 시각을 보존한다")
         void markReadIsIdempotentAndPreservesFirstReadAt() {
             NotificationCreateResult created = service.create(command("event-read"));
-            Long id = created.notification().request().getId();
+            Long id = created.notification().id();
 
             NotificationDetails first = service.markRead(id, "user-1");
             NotificationDetails second = service.markRead(id, "user-1");
 
-            assertThat(first.inbox().getReadAt()).isNotNull();
-            assertThat(second.inbox().getReadAt()).isEqualTo(first.inbox().getReadAt());
+            assertThat(first.readAt()).isNotNull();
+            assertThat(second.readAt()).isEqualTo(first.readAt());
             assertThat(service.listForRecipient("user-1", true)).hasSize(1);
             assertThat(service.listForRecipient("user-1", false)).isEmpty();
         }

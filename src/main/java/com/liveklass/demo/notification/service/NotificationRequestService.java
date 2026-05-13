@@ -11,6 +11,8 @@ import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import com.liveklass.demo.notification.service.dto.NotificationDetails;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -20,8 +22,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.validation.annotation.Validated;
 
 @Service
+@Validated
 public class NotificationRequestService {
 
     private final NotificationRequestRepository requestRepository;
@@ -43,8 +47,9 @@ public class NotificationRequestService {
         this.insertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
-    public NotificationCreateResult create(NotificationCreateCommand command) {
-        validate(command);
+    public NotificationCreateResult create(
+            @Valid @NotNull(message = "notification create command is required") NotificationCreateCommand command
+    ) {
         return requestRepository.findByRecipientIdAndNotificationTypeAndChannelAndEventId(
                         command.recipientId(), command.notificationType(), command.channel(), command.eventId())
                 .map(existing -> new NotificationCreateResult(details(existing), true))
@@ -101,7 +106,7 @@ public class NotificationRequestService {
                 ));
                 NotificationDeliveryJob deliveryJob = deliveryJobRepository.saveAndFlush(new NotificationDeliveryJob(request));
                 NotificationInbox inbox = inboxRepository.saveAndFlush(new NotificationInbox(request));
-                return new NotificationDetails(request, deliveryJob, inbox);
+                return details(request, deliveryJob, inbox);
             });
             return new NotificationCreateResult(created, false);
         } catch (DataIntegrityViolationException duplicate) {
@@ -125,28 +130,11 @@ public class NotificationRequestService {
     private NotificationDetails details(NotificationRequest request, NotificationInbox inbox) {
         NotificationDeliveryJob deliveryJob = deliveryJobRepository.findById(request.getId())
                 .orElseThrow(() -> new NotificationNotFoundException(request.getId()));
-        return new NotificationDetails(request, deliveryJob, inbox);
+        return details(request, deliveryJob, inbox);
     }
 
-    private void validate(NotificationCreateCommand command) {
-        if (command.notificationType() == null) {
-            throw new NotificationValidationException("notificationType is required");
-        }
-        if (command.channel() == null) {
-            throw new NotificationValidationException("channel is required");
-        }
-        if (isBlank(command.recipientId())) {
-            throw new NotificationValidationException("recipientId is required");
-        }
-        if (isBlank(command.eventId())) {
-            throw new NotificationValidationException("eventId is required");
-        }
-        if (isBlank(command.title())) {
-            throw new NotificationValidationException("title is required");
-        }
-        if (isBlank(command.message())) {
-            throw new NotificationValidationException("message is required");
-        }
+    private NotificationDetails details(NotificationRequest request, NotificationDeliveryJob deliveryJob, NotificationInbox inbox) {
+        return NotificationDetails.from(request, deliveryJob, inbox);
     }
 
     private boolean isBlank(String value) {

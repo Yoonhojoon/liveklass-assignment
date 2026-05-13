@@ -1,9 +1,6 @@
 package com.liveklass.demo.notification.dto;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
-import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
-import com.liveklass.demo.notification.domain.NotificationInbox;
-import com.liveklass.demo.notification.domain.NotificationRequest;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.service.dto.NotificationDetails;
@@ -30,28 +27,25 @@ public record NotificationResponse(
         Instant failedAt
 ) {
     public static NotificationResponse from(NotificationDetails details) {
-        NotificationRequest request = details.request();
-        NotificationDeliveryJob deliveryJob = details.deliveryJob();
-        NotificationInbox inbox = details.inbox();
         return new NotificationResponse(
-                request.getId(),
-                request.getRecipientId(),
-                request.getNotificationType(),
-                request.getChannel(),
-                request.getEventId(),
-                request.getTitle(),
-                request.getMessage(),
-                deliveryJob.getStatus(),
-                deliveryJob.getRetryCount(),
-                deliveryJob.getLastFailureReason(),
-                deliveryJob.getNextRetryAt(),
-                inbox.getReadAt() != null,
-                inbox.getReadAt(),
-                request.getCreatedAt(),
-                deliveryJob.getUpdatedAt(),
-                deliveryJob.getProcessingStartedAt(),
-                deliveryJob.getSentAt(),
-                deliveryJob.getFailedAt()
+                details.id(),
+                details.recipientId(),
+                details.notificationType(),
+                details.channel(),
+                details.eventId(),
+                details.title(),
+                details.message(),
+                details.status(),
+                details.retryCount(),
+                details.lastFailureReason(),
+                details.nextRetryAt(),
+                details.read(),
+                details.readAt(),
+                details.createdAt(),
+                details.updatedAt(),
+                details.processingStartedAt(),
+                details.sentAt(),
+                details.failedAt()
         );
     }
 }

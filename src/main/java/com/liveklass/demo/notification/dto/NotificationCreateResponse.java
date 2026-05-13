@@ -7,8 +7,8 @@ public record NotificationCreateResponse(Long id, NotificationStatus status, boo
 
     public static NotificationCreateResponse from(NotificationCreateResult result) {
         return new NotificationCreateResponse(
-                result.notification().request().getId(),
-                result.notification().deliveryJob().getStatus(),
+                result.notification().id(),
+                result.notification().status(),
                 result.duplicated()
         );
     }
