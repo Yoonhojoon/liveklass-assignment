@@ -89,11 +89,29 @@ Content-Type: application/json
   "channel": "EMAIL",
   "eventId": "payment-1001",
   "title": "결제가 완료되었습니다",
-  "message": "결제 확정 알림입니다."
+  "message": "결제 확정 알림입니다.",
+  "scheduledAt": "2026-05-14T09:00:00Z"
 }
 ```
 
-응답은 즉시 `202 Accepted`를 반환하며 실제 발송 성공 여부를 확정하지 않습니다.
+또는 템플릿 기반 생성도 지원합니다.
+
+```json
+{
+  "recipientId": "user-1",
+  "notificationType": "PAYMENT_CONFIRMED",
+  "channel": "EMAIL",
+  "eventId": "payment-1002",
+  "templateVariables": {
+    "userName": "kim",
+    "amount": "10000"
+  }
+}
+```
+
+`title`/`message` 직접 입력 모드와 `templateVariables` 템플릿 모드는 서로 배타적입니다.
+
+응답은 즉시 `202 Accepted`를 반환하며 실제 발송 성공 여부를 확정하지 않습니다. `scheduledAt` 이 있으면 inbox에는 즉시 보이지만 worker 발송만 예약 시각 이후로 지연됩니다.
 
 성공 응답은 공통 래퍼를 사용합니다.
 
@@ -105,7 +123,8 @@ Content-Type: application/json
   "data": {
     "id": 1,
     "status": "REQUESTED",
-    "duplicated": false
+    "duplicated": false,
+    "scheduledAt": "2026-05-14T09:00:00Z"
   }
 }
 ```
@@ -148,6 +167,7 @@ GET /api/notifications/{id}
     "retryCount": 1,
     "lastFailureReason": "temporary sender failure",
     "nextRetryAt": "2026-05-13T10:01:00Z",
+    "scheduledAt": "2026-05-14T09:00:00Z",
     "lockedBy": null,
     "lockedUntil": null,
     "retryable": true,
@@ -179,6 +199,33 @@ X-User-Id: user-1
 ```
 
 읽음 처리는 멱등이며 최초 `readAt`만 보존합니다. 응답은 상태 조회와 같은 `NotificationResponse`를 공통 래퍼의 `data`로 반환합니다.
+
+### 수동 재시도
+
+```http
+POST /api/notifications/{id}/retry
+X-Operator-Id: admin-1
+Content-Type: application/json
+
+{
+  "reason": "smtp 설정 수정 후 재시도"
+}
+```
+
+수동 재시도는 `FAILED` 상태에서만 허용합니다. 같은 `requestId` 와 inbox/read 상태를 유지한 채 `REQUESTED` 로 되돌리고, retry audit 을 별도 row 로 남깁니다. 정책은 **A: retryCount 초기화** 입니다.
+
+### 템플릿 관리
+
+```http
+POST /api/notification-templates/{notificationType}/{channel}
+GET /api/notification-templates
+GET /api/notification-templates/{notificationType}/{channel}
+PUT /api/notification-templates/{notificationType}/{channel}
+PATCH /api/notification-templates/{notificationType}/{channel}/enabled
+DELETE /api/notification-templates/{notificationType}/{channel}
+```
+
+템플릿은 `(notificationType, channel)` 기준으로 관리하고 `${name}` 형식 placeholder 만 지원합니다. 템플릿은 **create 시점에 렌더링** 되며, 이후 템플릿을 바꿔도 기존 알림의 title/message 는 바뀌지 않습니다.
 
 ### 지원 enum
 
@@ -213,10 +260,32 @@ worker가 폴링/점유/재시도하는 DB 큐입니다.
 - `retry_count`
 - `last_failure_reason`
 - `next_retry_at`
+- `scheduled_at`
 - `locked_by`, `locked_until`
 - `processing_started_at`
 - `sent_at`, `failed_at`
 - `created_at`, `updated_at`
+
+### `notification_template`
+
+- `id`
+- `notification_type`
+- `channel`
+- `title_template`
+- `message_template`
+- `enabled`
+- `created_at`, `updated_at`
+- unique: `notification_type + channel`
+
+### `notification_retry_audit`
+
+- `id`
+- `request_id`
+- `operator_id`
+- `reason`
+- `previous_retry_count`
+- `previous_failure_reason`
+- `retried_at`
 
 ## 운영 설정
 
@@ -255,6 +324,8 @@ worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micro
 - DB를 큐처럼 사용하지만, 실제 MQ로 교체 가능하도록 worker 처리 상태는 `notification_delivery_job`에 격리했습니다.
 - 사용자 목록 API 보존을 위해 EMAIL/IN_APP 모두 `notification_inbox` row를 생성합니다.
 - 실제 운영 환경으로 전환이 가능해야 하기 때문에, 추후 로그 검색을 위한 로그 분류가 필요하다고 가정했습니다.
+- 예약 발송은 별도 `SCHEDULED` 상태를 늘리지 않고 `REQUESTED + scheduledAt` 으로 해석했습니다.
+- 예약 알림도 현재 모델을 유지하기 위해 생성 즉시 inbox 에 보인다고 가정했습니다.
 
 ## 설계 결정과 이유
 
@@ -264,6 +335,9 @@ worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micro
 - 다중 인스턴스 중복 처리는 조건부 update claim으로 방지합니다.
 - `locked_by`, `locked_until`은 delivery job에만 두어 request 원장을 worker 세부 구현에서 분리했습니다.
 - `read_at`은 inbox에만 두어 사용자 보관 상태와 worker 큐 상태를 분리했습니다.
+- `scheduled_at`은 request 원장이 아니라 delivery job 에 두어 "발송 가능 시각" 으로 다뤘습니다.
+- 수동 재시도는 새 request/inbox row 를 만들지 않고 같은 lifecycle 을 이어가도록 했습니다.
+- 템플릿은 send 시점이 아니라 create 시점에 렌더링해 과거 알림 내용이 변하지 않게 했습니다.
 - 성공 응답은 `common.response.ApiResponse`로 통일하고, 오류 응답은 Spring의 `ProblemDetail` 기반으로 분리했습니다.
 
 ## 테스트 실행 방법
@@ -281,12 +355,15 @@ worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micro
 - stale `PROCESSING` 재처리
 - 사용자 목록 read/unread 필터
 - 읽음 처리 멱등성
+- 예약 발송 due gate
+- 템플릿 CRUD 및 템플릿 기반 생성
+- FAILED 수동 재시도 + audit
 
 ## 재시작 복구 정책
 
 서버 재시작 후 worker는 파일 DB에 남아 있는 `notification_delivery_job` 중 아래 대상을 다시 처리합니다.
 
-- `REQUESTED`
+- `REQUESTED` 중 `scheduledAt` 이 없거나 현재 시각보다 과거인 작업
 - `RETRY_WAITING` 중 `nextRetryAt`이 현재 시각보다 과거인 작업
 - `PROCESSING` 중 `lockedUntil`이 현재 시각보다 과거인 오래 점유된 작업
 
@@ -296,8 +373,9 @@ worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micro
 
 - 실제 이메일 발송은 로그 sender로 대체합니다.
 - 실제 메시지 브로커는 사용하지 않습니다.
-- 수동 재시도 운영 API는 구현하지 않았습니다.
 - delivery job 보관/정리 정책은 별도 운영 정책으로 남겨두었습니다.
+- 예약 알림은 dispatch 전에도 inbox 에 보입니다.
+- 템플릿 placeholder 는 `${key}` 단순 치환만 지원합니다.
 
 ## AI 활용 범위
 
