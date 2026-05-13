@@ -37,9 +37,9 @@ public class NotificationWorker {
     @Scheduled(fixedDelayString = "${notification.worker.poll-delay-ms:${notification.worker.pollDelayMs:5000}}")
     public void poll() {
         int batchSize = properties.getWorker().getBatchSize();
-        log.info("notification worker poll started workerId={} batchSize={}", workerId, batchSize);
+        log.debug("notification worker poll started workerId={} batchSize={}", workerId, batchSize);
         int processed = processBatch(batchSize);
-        log.info("notification worker poll finished workerId={} processed={}", workerId, processed);
+        log.debug("notification worker poll finished workerId={} processed={}", workerId, processed);
     }
 
     public int processBatch(int limit) {
