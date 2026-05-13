@@ -16,7 +16,7 @@ public interface NotificationDeliveryJobRepository extends JpaRepository<Notific
     @Query("""
             select j
             from NotificationDeliveryJob j
-            where j.status = :requested
+            where (j.status = :requested and (j.scheduledAt is null or j.scheduledAt <= :now))
                or (j.status = :retryWaiting and j.nextRetryAt <= :now)
                or (j.status = :processing and j.lockedUntil < :now)
             order by j.createdAt asc
@@ -39,7 +39,7 @@ public interface NotificationDeliveryJobRepository extends JpaRepository<Notific
                    j.updatedAt = :now
              where j.requestId = :requestId
                and (
-                    j.status = :requested
+                    (j.status = :requested and (j.scheduledAt is null or j.scheduledAt <= :now))
                     or (j.status = :retryWaiting and j.nextRetryAt <= :now)
                     or (j.status = :processing and j.lockedUntil < :now)
                )
@@ -69,4 +69,26 @@ public interface NotificationDeliveryJobRepository extends JpaRepository<Notific
     );
 
     Optional<NotificationDeliveryJob> findByRequestIdAndStatusAndLockedBy(Long requestId, NotificationStatus status, String lockedBy);
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update NotificationDeliveryJob j
+               set j.status = :requested,
+                   j.retryCount = 0,
+                   j.lastFailureReason = null,
+                   j.nextRetryAt = null,
+                   j.lockedBy = null,
+                   j.lockedUntil = null,
+                   j.processingStartedAt = null,
+                   j.sentAt = null,
+                   j.failedAt = null,
+                   j.updatedAt = :now
+             where j.requestId = :requestId
+               and j.status = :failed
+            """)
+    int resetFailedForManualRetry(
+            @Param("requestId") Long requestId,
+            @Param("requested") NotificationStatus requested,
+            @Param("failed") NotificationStatus failed,
+            @Param("now") Instant now
+    );
 }

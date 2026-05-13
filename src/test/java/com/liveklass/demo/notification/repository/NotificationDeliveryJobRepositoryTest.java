@@ -45,6 +45,37 @@ class NotificationDeliveryJobRepositoryTest {
             assertThat(claimed.getStatus()).isEqualTo(NotificationStatus.PROCESSING);
             assertThat(claimed.getLockedBy()).isEqualTo("worker-a");
         }
+
+        @Test
+        @DisplayName("수동 재시도 reset은 FAILED 작업에만 적용된다")
+        void manualRetryResetOnlyAffectsFailedRows() {
+            Instant now = Instant.now();
+            NotificationDeliveryJob failed = job("failed-reset");
+            claim(failed.getRequestId(), "worker-a", now, now.plusSeconds(600));
+            jobRepository.findById(failed.getRequestId()).orElseThrow().markFailed(3, "smtp down", now);
+            NotificationDeliveryJob requested = job("requested-reset");
+            jobRepository.flush();
+
+            int failedUpdated = jobRepository.resetFailedForManualRetry(
+                    failed.getRequestId(),
+                    NotificationStatus.REQUESTED,
+                    NotificationStatus.FAILED,
+                    now
+            );
+            int requestedUpdated = jobRepository.resetFailedForManualRetry(
+                    requested.getRequestId(),
+                    NotificationStatus.REQUESTED,
+                    NotificationStatus.FAILED,
+                    now
+            );
+
+            NotificationDeliveryJob reset = jobRepository.findById(failed.getRequestId()).orElseThrow();
+            assertThat(failedUpdated).isEqualTo(1);
+            assertThat(requestedUpdated).isZero();
+            assertThat(reset.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
+            assertThat(reset.getRetryCount()).isZero();
+            assertThat(reset.getLastFailureReason()).isNull();
+        }
     }
 
     @Nested
@@ -87,6 +118,37 @@ class NotificationDeliveryJobRepositoryTest {
             assertThat(processableIds).contains(requested.getRequestId(), dueRetry.getRequestId(), stale.getRequestId());
             assertThat(processableIds).doesNotContain(
                     nonDueRetry.getRequestId(), fresh.getRequestId(), sent.getRequestId(), failed.getRequestId());
+        }
+
+        @Test
+        @DisplayName("예약 미래 시각 요청은 처리 대상에서 제외한다")
+        void futureScheduledRowsAreNotProcessableUntilDue() {
+            Instant now = Instant.now();
+            NotificationRequest request = requestRepository.saveAndFlush(new NotificationRequest(
+                    "user-1",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "scheduled-future",
+                    "title",
+                    "message"
+            ));
+            NotificationDeliveryJob futureScheduled = jobRepository.saveAndFlush(new NotificationDeliveryJob(
+                    request,
+                    now.plusSeconds(300)
+            ));
+
+            List<Long> processableIds = jobRepository.findProcessable(
+                            now,
+                            NotificationStatus.REQUESTED,
+                            NotificationStatus.RETRY_WAITING,
+                            NotificationStatus.PROCESSING,
+                            PageRequest.of(0, 10)
+                    ).stream()
+                    .map(NotificationDeliveryJob::getRequestId)
+                    .toList();
+
+            assertThat(processableIds).doesNotContain(futureScheduled.getRequestId());
+            assertThat(claim(futureScheduled.getRequestId(), "worker-a", now, now.plusSeconds(600))).isZero();
         }
     }
 

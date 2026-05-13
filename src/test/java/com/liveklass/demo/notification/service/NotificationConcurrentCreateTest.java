@@ -6,7 +6,9 @@ import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
+import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import java.util.ArrayList;
@@ -41,10 +43,18 @@ class NotificationConcurrentCreateTest {
     @Autowired
     private NotificationInboxRepository inboxRepository;
 
+    @Autowired
+    private NotificationTemplateRepository templateRepository;
+
+    @Autowired
+    private NotificationRetryAuditRepository retryAuditRepository;
+
     @BeforeEach
     void clean() {
         inboxRepository.deleteAll();
+        retryAuditRepository.deleteAll();
         deliveryJobRepository.deleteAll();
+        templateRepository.deleteAll();
         repository.deleteAll();
     }
 
@@ -94,7 +104,9 @@ class NotificationConcurrentCreateTest {
                 NotificationChannel.EMAIL,
                 "event-concurrent",
                 "title",
-                "message"
+                "message",
+                null,
+                null
         );
     }
 }
