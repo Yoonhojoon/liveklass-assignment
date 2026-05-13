@@ -11,6 +11,8 @@ import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import com.liveklass.demo.notification.service.dto.NotificationDetails;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -20,8 +22,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.validation.annotation.Validated;
 
 @Service
+@Validated
 public class NotificationRequestService {
 
     private final NotificationRequestRepository requestRepository;
@@ -43,8 +47,9 @@ public class NotificationRequestService {
         this.insertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
-    public NotificationCreateResult create(NotificationCreateCommand command) {
-        requireCommand(command);
+    public NotificationCreateResult create(
+            @Valid @NotNull(message = "notification create command is required") NotificationCreateCommand command
+    ) {
         return requestRepository.findByRecipientIdAndNotificationTypeAndChannelAndEventId(
                         command.recipientId(), command.notificationType(), command.channel(), command.eventId())
                 .map(existing -> new NotificationCreateResult(details(existing), true))
@@ -130,12 +135,6 @@ public class NotificationRequestService {
 
     private NotificationDetails details(NotificationRequest request, NotificationDeliveryJob deliveryJob, NotificationInbox inbox) {
         return NotificationDetails.from(request, deliveryJob, inbox);
-    }
-
-    private void requireCommand(NotificationCreateCommand command) {
-        if (command == null) {
-            throw new IllegalArgumentException("notification create command is required");
-        }
     }
 
     private boolean isBlank(String value) {
