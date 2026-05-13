@@ -53,7 +53,7 @@ public class NotificationRetryAudit {
     @PrePersist
     void prePersist() {
         if (retriedAt == null) {
-            retriedAt = Instant.now();
+            retriedAt = NotificationTime.now();
         }
     }
 }

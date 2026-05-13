@@ -2,7 +2,6 @@ package com.liveklass.demo.notification.controller;
 
 import com.liveklass.demo.common.response.ApiResponse;
 import com.liveklass.demo.common.response.CommonSuccessStatus;
-import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.dto.NotificationCreateResponse;
 import com.liveklass.demo.notification.dto.NotificationRetryRequest;
 import com.liveklass.demo.notification.dto.NotificationResponse;
@@ -14,6 +13,7 @@ import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.service.NotificationRetryService;
 import com.liveklass.demo.notification.service.NotificationRequestService;
 import com.liveklass.demo.notification.service.NotificationTemplateService;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -47,8 +47,8 @@ public class NotificationController {
     }
 
     @PostMapping("/notifications")
-    public ResponseEntity<ApiResponse<NotificationCreateResponse>> create(@Valid @RequestBody NotificationCreateRequest request) {
-        NotificationCreateResult result = service.create(request.toCommand());
+    public ResponseEntity<ApiResponse<NotificationCreateResponse>> create(@Valid @RequestBody NotificationCreateCommand request) {
+        NotificationCreateResult result = service.create(request);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(ApiResponse.success(CommonSuccessStatus.ACCEPTED, NotificationCreateResponse.from(result)));
     }
@@ -59,8 +59,13 @@ public class NotificationController {
     }
 
     @GetMapping("/users/{recipientId}/notifications")
-    public ApiResponse<List<NotificationResponse>> list(@PathVariable String recipientId, @RequestParam(required = false) Boolean read) {
-        List<NotificationResponse> notifications = service.listForRecipient(recipientId, read).stream()
+    public ApiResponse<List<NotificationResponse>> list(
+            @PathVariable String recipientId,
+            @RequestParam(required = false) Boolean read,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size
+    ) {
+        List<NotificationResponse> notifications = service.listForRecipient(recipientId, read, page, size).stream()
                 .map(NotificationResponse::from)
                 .toList();
         return ApiResponse.success(CommonSuccessStatus.OK, notifications);
@@ -115,7 +120,7 @@ public class NotificationController {
     public ApiResponse<NotificationTemplateResponse> setTemplateEnabled(
             @PathVariable NotificationType notificationType,
             @PathVariable NotificationChannel channel,
-            @RequestBody NotificationTemplateEnabledRequest request
+            @Valid @RequestBody NotificationTemplateEnabledRequest request
     ) {
         return ApiResponse.success(CommonSuccessStatus.OK,
                 NotificationTemplateResponse.from(templateService.setEnabled(notificationType, channel, request)));

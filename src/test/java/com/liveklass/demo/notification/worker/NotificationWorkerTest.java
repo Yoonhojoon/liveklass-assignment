@@ -113,8 +113,11 @@ class NotificationWorkerTest {
         @DisplayName("재시도 한도에 도달한 실패는 FAILED로 전이한다")
         void exhaustedRetryMovesDeliveryJobToFailedAndKeepsFailureReason() {
             NotificationDeliveryJob retryExhausted = job("failed");
-            retryExhausted.markRetryWaiting(3, "previous", Instant.now().minusSeconds(1));
-            jobRepository.saveAndFlush(retryExhausted);
+            Instant now = Instant.now();
+            claimInTransaction(retryExhausted.getRequestId(), "worker-previous", now, now.plusSeconds(600));
+            NotificationDeliveryJob prepared = jobRepository.findById(retryExhausted.getRequestId()).orElseThrow();
+            prepared.markRetryWaiting(3, "previous", now.minusSeconds(1), now);
+            jobRepository.saveAndFlush(prepared);
             NotificationWorker worker = worker(new RecordingSender(true));
 
             worker.processBatch(10);

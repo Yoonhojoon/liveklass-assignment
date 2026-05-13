@@ -11,7 +11,6 @@ import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.dto.NotificationRetryRequest;
 import com.liveklass.demo.notification.domain.NotificationType;
-import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.dto.NotificationTemplateEnabledRequest;
 import com.liveklass.demo.notification.dto.NotificationTemplateUpsertRequest;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
@@ -19,6 +18,7 @@ import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,7 +114,7 @@ class NotificationControllerIntegrationTest {
         @Test
         @DisplayName("잘못된 요청은 ProblemDetail 형식의 에러 응답을 반환한다")
         void invalidRequestReturnsProblemDetailError() throws Exception {
-            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String body = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -138,7 +138,7 @@ class NotificationControllerIntegrationTest {
         @Test
         @DisplayName("필수 enum 값이 없으면 ProblemDetail 형식의 에러 응답을 반환한다")
         void nullEnumRequestReturnsProblemDetailError() throws Exception {
-            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String body = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     null,
                     NotificationChannel.EMAIL,
@@ -219,7 +219,7 @@ class NotificationControllerIntegrationTest {
         @DisplayName("예약 알림은 scheduledAt을 노출하고 inbox에 즉시 보인다")
         void scheduledNotificationExposesScheduledAtAndIsVisibleInInbox() throws Exception {
             Instant scheduledAt = Instant.parse("2026-05-14T09:00:00Z");
-            String body = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String body = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -272,7 +272,7 @@ class NotificationControllerIntegrationTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.enabled").value(true));
 
-            String createBody = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String createBody = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -298,6 +298,27 @@ class NotificationControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("템플릿 enabled 요청에서 필드가 누락되면 400을 반환한다")
+        void missingEnabledFieldReturnsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/notification-templates/{notificationType}/{channel}",
+                            NotificationType.PAYMENT_CONFIRMED, NotificationChannel.EMAIL)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(new NotificationTemplateUpsertRequest(
+                                    "안녕하세요 ${userName}",
+                                    "결제 금액은 ${amount}원입니다.",
+                                    true
+                            ))))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(patch("/api/notification-templates/{notificationType}/{channel}/enabled",
+                            NotificationType.PAYMENT_CONFIRMED, NotificationChannel.EMAIL)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("enabled is required"));
+        }
+
+        @Test
         @DisplayName("비활성 템플릿으로 생성하면 400을 반환한다")
         void disabledTemplateCreateReturnsBadRequest() throws Exception {
             mockMvc.perform(post("/api/notification-templates/{notificationType}/{channel}",
@@ -310,7 +331,7 @@ class NotificationControllerIntegrationTest {
                             ))))
                     .andExpect(status().isOk());
 
-            String createBody = objectMapper.writeValueAsString(new NotificationCreateRequest(
+            String createBody = objectMapper.writeValueAsString(new NotificationCreateCommand(
                     "user-1",
                     NotificationType.PAYMENT_CONFIRMED,
                     NotificationChannel.EMAIL,
@@ -444,6 +465,35 @@ class NotificationControllerIntegrationTest {
         }
 
         @Test
+        @DisplayName("수신자 목록은 page와 size로 조회 범위를 제한한다")
+        void userListSupportsPageAndSizeLimit() throws Exception {
+            create("payment-page-1");
+            create("payment-page-2");
+            create("payment-page-3");
+
+            mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1")
+                            .param("page", "0")
+                            .param("size", "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(2));
+
+            mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1")
+                            .param("page", "1")
+                            .param("size", "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.length()").value(1));
+        }
+
+        @Test
+        @DisplayName("수신자 목록 size는 최대값을 넘을 수 없다")
+        void userListRejectsTooLargeSize() throws Exception {
+            mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1")
+                            .param("size", "101"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("size must be between 1 and 100"));
+        }
+
+        @Test
         @DisplayName("읽음 처리는 멱등이고 최초 읽음 시각을 보존한다")
         void readEndpointIsIdempotentAndPreservesFirstReadAt() throws Exception {
             long id = create("payment-read-idempotent");
@@ -473,8 +523,8 @@ class NotificationControllerIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("data").get("id").asLong();
     }
 
-    private NotificationCreateRequest request(String eventId) {
-        return new NotificationCreateRequest(
+    private NotificationCreateCommand request(String eventId) {
+        return new NotificationCreateCommand(
                 "user-1",
                 NotificationType.PAYMENT_CONFIRMED,
                 NotificationChannel.EMAIL,

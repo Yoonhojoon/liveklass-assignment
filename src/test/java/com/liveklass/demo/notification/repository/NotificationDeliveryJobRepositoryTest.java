@@ -1,6 +1,7 @@
 package com.liveklass.demo.notification.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
@@ -88,11 +89,13 @@ class NotificationDeliveryJobRepositoryTest {
             Instant now = Instant.now();
             NotificationDeliveryJob requested = job("requested");
             NotificationDeliveryJob dueRetry = job("due-retry");
-            dueRetry.markRetryWaiting(1, "temporary", now.minusSeconds(1));
-            jobRepository.save(dueRetry);
+            claim(dueRetry.getRequestId(), "worker-due", now, now.plusSeconds(600));
+            jobRepository.findById(dueRetry.getRequestId()).orElseThrow()
+                    .markRetryWaiting(1, "temporary", now.minusSeconds(1), now);
             NotificationDeliveryJob nonDueRetry = job("non-due-retry");
-            nonDueRetry.markRetryWaiting(1, "temporary", now.plusSeconds(60));
-            jobRepository.save(nonDueRetry);
+            claim(nonDueRetry.getRequestId(), "worker-non-due", now, now.plusSeconds(600));
+            jobRepository.findById(nonDueRetry.getRequestId()).orElseThrow()
+                    .markRetryWaiting(1, "temporary", now.plusSeconds(60), now);
             NotificationDeliveryJob stale = job("stale");
             claim(stale.getRequestId(), "worker-stale", now, now.minusSeconds(1));
             NotificationDeliveryJob fresh = job("fresh");
@@ -149,6 +152,28 @@ class NotificationDeliveryJobRepositoryTest {
 
             assertThat(processableIds).doesNotContain(futureScheduled.getRequestId());
             assertThat(claim(futureScheduled.getRequestId(), "worker-a", now, now.plusSeconds(600))).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("상태 전이 보호")
+    class StateTransition {
+
+        @Test
+        @DisplayName("처리중이 아닌 작업은 완료, 재시도, 실패로 바로 전이할 수 없다")
+        void terminalAndRetryTransitionsRequireProcessingStatus() {
+            NotificationDeliveryJob requested = job("guard-requested");
+            Instant now = Instant.now();
+
+            assertThatThrownBy(() -> requested.markSent(now))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("from REQUESTED");
+            assertThatThrownBy(() -> requested.markRetryWaiting(1, "temporary", now.plusSeconds(60), now))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("from REQUESTED");
+            assertThatThrownBy(() -> requested.markFailed(3, "failed", now))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("from REQUESTED");
         }
     }
 

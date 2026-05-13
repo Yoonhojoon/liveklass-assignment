@@ -86,46 +86,63 @@ public class NotificationDeliveryJob {
         this.scheduledAt = scheduledAt;
     }
 
-    @PrePersist
-    void prePersist() {
-        Instant now = Instant.now();
+    public void initializeTimestamps(Instant now) {
         createdAt = now;
         updatedAt = now;
     }
 
+    @PrePersist
+    void prePersist() {
+        if (createdAt == null || updatedAt == null) {
+            initializeTimestamps(NotificationTime.now());
+        }
+    }
+
     @PreUpdate
     void preUpdate() {
-        updatedAt = Instant.now();
+        updatedAt = NotificationTime.now();
     }
 
     public void markSent(Instant now) {
+        requireProcessing("mark sent");
         status = NotificationStatus.SENT;
         sentAt = now;
         failedAt = null;
         nextRetryAt = null;
         lastFailureReason = null;
+        updatedAt = now;
         clearLock();
     }
 
-    public void markRetryWaiting(int nextRetryCount, String failureReason, Instant nextRetryAt) {
+    public void markRetryWaiting(int nextRetryCount, String failureReason, Instant nextRetryAt, Instant now) {
+        requireProcessing("mark retry waiting");
         status = NotificationStatus.RETRY_WAITING;
         retryCount = nextRetryCount;
         lastFailureReason = failureReason;
         this.nextRetryAt = nextRetryAt;
+        updatedAt = now;
         clearLock();
     }
 
     public void markFailed(int nextRetryCount, String failureReason, Instant now) {
+        requireProcessing("mark failed");
         status = NotificationStatus.FAILED;
         retryCount = nextRetryCount;
         lastFailureReason = failureReason;
         failedAt = now;
         nextRetryAt = null;
+        updatedAt = now;
         clearLock();
     }
 
     private void clearLock() {
         lockedBy = null;
         lockedUntil = null;
+    }
+
+    private void requireProcessing(String operation) {
+        if (status != NotificationStatus.PROCESSING) {
+            throw new IllegalStateException("cannot " + operation + " notification delivery job from " + status);
+        }
     }
 }

@@ -1,4 +1,9 @@
 package com.liveklass.demo.notification.dto;
 
-public record NotificationTemplateEnabledRequest(boolean enabled) {
+import jakarta.validation.constraints.NotNull;
+
+public record NotificationTemplateEnabledRequest(
+        @NotNull(message = "enabled is required")
+        Boolean enabled
+) {
 }

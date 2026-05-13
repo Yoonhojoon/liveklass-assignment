@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationType;
-import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
+import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -72,7 +72,7 @@ class NotificationE2eTest {
     @Test
     @DisplayName("실제 HTTP 요청으로 접수한 알림을 스케줄러 워커가 발송 완료한다")
     void realHttpRequestIsAcceptedAndSentByScheduledWorker() throws Exception {
-        NotificationCreateRequest createRequest = new NotificationCreateRequest(
+        NotificationCreateCommand createRequest = new NotificationCreateCommand(
                 "user-e2e",
                 NotificationType.PAYMENT_CONFIRMED,
                 NotificationChannel.EMAIL,

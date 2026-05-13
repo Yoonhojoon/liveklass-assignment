@@ -85,7 +85,7 @@ public class NotificationProcessingService {
             return FailureHandlingResult.FAILED;
         }
         int nextRetryCount = job.getRetryCount() + 1;
-        job.markRetryWaiting(nextRetryCount, reason, now.plus(retryPolicy.backoffForRetryCount(nextRetryCount)));
+        job.markRetryWaiting(nextRetryCount, reason, now.plus(retryPolicy.backoffForRetryCount(nextRetryCount)), now);
         return FailureHandlingResult.RETRY_SCHEDULED;
     }
 

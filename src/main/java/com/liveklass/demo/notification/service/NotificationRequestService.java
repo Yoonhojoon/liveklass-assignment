@@ -7,6 +7,7 @@ import com.liveklass.demo.notification.exception.NotificationNotFoundException;
 import com.liveklass.demo.notification.exception.NotificationValidationException;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxWithJobView;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
@@ -17,6 +18,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -27,6 +29,8 @@ import org.springframework.validation.annotation.Validated;
 @Service
 @Validated
 public class NotificationRequestService {
+    public static final int DEFAULT_LIST_SIZE = 50;
+    public static final int MAX_LIST_SIZE = 100;
 
     private final NotificationRequestRepository requestRepository;
     private final NotificationDeliveryJobRepository deliveryJobRepository;
@@ -67,19 +71,31 @@ public class NotificationRequestService {
 
     @Transactional(readOnly = true)
     public List<NotificationDetails> listForRecipient(String recipientId, Boolean read) {
+        return listForRecipient(recipientId, read, 0, DEFAULT_LIST_SIZE);
+    }
+
+    @Transactional(readOnly = true)
+    public List<NotificationDetails> listForRecipient(String recipientId, Boolean read, int page, int size) {
         if (isBlank(recipientId)) {
             throw new NotificationValidationException("recipientId is required");
         }
-        List<NotificationInbox> inboxes;
+        if (page < 0) {
+            throw new NotificationValidationException("page must be greater than or equal to 0");
+        }
+        if (size < 1 || size > MAX_LIST_SIZE) {
+            throw new NotificationValidationException("size must be between 1 and " + MAX_LIST_SIZE);
+        }
+        PageRequest pageable = PageRequest.of(page, size);
+        List<NotificationInboxWithJobView> inboxes;
         if (read == null) {
-            inboxes = inboxRepository.findByRecipientIdWithRequestOrderByCreatedAtDesc(recipientId);
+            inboxes = inboxRepository.findDetailsByRecipientIdOrderByCreatedAtDesc(recipientId, pageable);
         } else if (read) {
-            inboxes = inboxRepository.findReadByRecipientIdWithRequestOrderByCreatedAtDesc(recipientId);
+            inboxes = inboxRepository.findReadDetailsByRecipientIdOrderByCreatedAtDesc(recipientId, pageable);
         } else {
-            inboxes = inboxRepository.findUnreadByRecipientIdWithRequestOrderByCreatedAtDesc(recipientId);
+            inboxes = inboxRepository.findUnreadDetailsByRecipientIdOrderByCreatedAtDesc(recipientId, pageable);
         }
         return inboxes.stream()
-                .map(inbox -> details(inbox.getRequest(), inbox))
+                .map(row -> details(row.request(), row.deliveryJob(), row.inbox()))
                 .toList();
     }
 
@@ -99,16 +115,25 @@ public class NotificationRequestService {
     private NotificationCreateResult saveNewOrReturnDuplicate(NotificationCreateCommand command, TemplateRenderResult content) {
         try {
             NotificationDetails created = insertTransaction.execute(status -> {
-                NotificationRequest request = requestRepository.saveAndFlush(new NotificationRequest(
+                Instant now = Instant.now(clock);
+                NotificationRequest request = new NotificationRequest(
                         command.recipientId(),
                         command.notificationType(),
                         command.channel(),
                         command.eventId(),
                         content.title(),
                         content.message()
-                ));
-                NotificationDeliveryJob deliveryJob = deliveryJobRepository.saveAndFlush(new NotificationDeliveryJob(request, command.scheduledAt()));
-                NotificationInbox inbox = inboxRepository.saveAndFlush(new NotificationInbox(request));
+                );
+                request.initializeTimestamps(now);
+                request = requestRepository.saveAndFlush(request);
+
+                NotificationDeliveryJob deliveryJob = new NotificationDeliveryJob(request, command.scheduledAt());
+                deliveryJob.initializeTimestamps(now);
+                deliveryJob = deliveryJobRepository.saveAndFlush(deliveryJob);
+
+                NotificationInbox inbox = new NotificationInbox(request);
+                inbox.initializeTimestamps(now);
+                inbox = inboxRepository.saveAndFlush(inbox);
                 return details(request, deliveryJob, inbox);
             });
             return new NotificationCreateResult(created, false);

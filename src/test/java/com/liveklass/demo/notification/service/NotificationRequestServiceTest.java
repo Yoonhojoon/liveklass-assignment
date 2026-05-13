@@ -18,19 +18,34 @@ import com.liveklass.demo.notification.repository.NotificationTemplateRepository
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import com.liveklass.demo.notification.service.dto.NotificationDetails;
+import jakarta.persistence.EntityManagerFactory;
 import jakarta.validation.ConstraintViolationException;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 
 @DisplayName("알림 요청 서비스 테스트")
-@SpringBootTest(properties = "notification.worker.enabled=false")
+@SpringBootTest(properties = {
+        "notification.worker.enabled=false",
+        "spring.jpa.properties.hibernate.generate_statistics=true"
+})
+@Import(NotificationRequestServiceTest.FixedClockConfiguration.class)
 class NotificationRequestServiceTest {
+
+    private static final Instant FIXED_NOW = Instant.parse("2026-05-13T00:00:00Z");
 
     @Autowired
     private NotificationRequestService service;
@@ -52,6 +67,9 @@ class NotificationRequestServiceTest {
 
     @Autowired
     private NotificationRetryAuditRepository retryAuditRepository;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @BeforeEach
     void clean() {
@@ -82,6 +100,23 @@ class NotificationRequestServiceTest {
             assertThat(job.getRetryCount()).isZero();
             assertThat(job.getSentAt()).isNull();
             assertThat(inbox.getReadAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("생성 시각은 주입된 Clock 기준으로 기록한다")
+        void createTimestampsUseInjectedClock() {
+            NotificationCreateResult result = service.create(command("event-clock"));
+            Long id = result.notification().id();
+
+            NotificationDeliveryJob job = deliveryJobRepository.findById(id).orElseThrow();
+            NotificationInbox inbox = inboxRepository.findById(id).orElseThrow();
+
+            assertThat(result.notification().createdAt()).isEqualTo(FIXED_NOW);
+            assertThat(result.notification().updatedAt()).isEqualTo(FIXED_NOW);
+            assertThat(job.getCreatedAt()).isEqualTo(FIXED_NOW);
+            assertThat(job.getUpdatedAt()).isEqualTo(FIXED_NOW);
+            assertThat(inbox.getCreatedAt()).isEqualTo(FIXED_NOW);
+            assertThat(inbox.getUpdatedAt()).isEqualTo(FIXED_NOW);
         }
 
         @Test
@@ -243,6 +278,21 @@ class NotificationRequestServiceTest {
             assertThat(details.scheduledAt()).isEqualTo(scheduledAt);
             assertThat(service.listForRecipient("user-1", false)).hasSize(1);
         }
+
+        @Test
+        @DisplayName("목록 조회는 inbox와 delivery job을 한 번에 조회한다")
+        void listForRecipientLoadsInboxAndDeliveryJobInSingleQuery() {
+            service.create(command("event-list-1"));
+            service.create(command("event-list-2"));
+            service.markRead(service.create(command("event-list-3")).notification().id(), "user-1");
+            Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+            statistics.clear();
+
+            java.util.List<NotificationDetails> results = service.listForRecipient("user-1", null);
+
+            assertThat(results).hasSize(3);
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(1L);
+        }
     }
 
     private NotificationCreateCommand command(String eventId) {
@@ -256,5 +306,15 @@ class NotificationRequestServiceTest {
                 null,
                 null
         );
+    }
+
+    @TestConfiguration
+    static class FixedClockConfiguration {
+
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(FIXED_NOW, ZoneOffset.UTC);
+        }
     }
 }
