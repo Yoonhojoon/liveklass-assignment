@@ -49,7 +49,7 @@ docker compose up --build
 - 사용자명: `sa`
 - 비밀번호: 없음
 
-Compose 실행 시 `docker` 프로필을 사용하며, `./data` 디렉터리를 컨테이너의 `/app/data`로 마운트합니다. 그래서 컨테이너를 내렸다가 다시 올려도 H2 파일 DB의 알림 요청, 발송 작업, 사용자 알림함 데이터가 유지됩니다.
+Compose 실행 시 `docker` 프로필을 사용하며, H2 파일 DB는 Docker named volume `liveklass-h2-data`에 저장합니다. 로컬 `./data` 디렉터리와 분리되므로 테스트하는 사람이 저장소 파일 상태에 영향을 덜 받고, 컨테이너를 내렸다가 다시 올려도 알림 요청, 발송 작업, 사용자 알림함 데이터는 유지됩니다.
 
 호스트 포트를 바꾸고 싶으면 `APP_PORT`를 지정합니다.
 
@@ -63,7 +63,17 @@ APP_PORT=18080 docker compose up --build
 docker compose down
 ```
 
-데이터까지 초기화하려면 컨테이너를 내린 뒤 `data` 디렉터리의 H2 파일을 삭제하고 다시 실행합니다.
+데이터까지 초기화:
+
+```bash
+docker compose down -v
+```
+
+재시작 복구 정책을 확인하고 싶으면 데이터를 유지한 채 앱 컨테이너만 재시작합니다.
+
+```bash
+docker compose restart app
+```
 
 ## API 목록 및 예시
 

@@ -8,4 +8,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
     volumes:
-      - ./data:/app/data
+      - liveklass-h2-data:/app/data
+
+volumes:
+  liveklass-h2-data:
