@@ -8,17 +8,15 @@ import com.liveklass.demo.notification.service.NotificationProcessingService;
 import com.liveklass.demo.notification.service.NotificationProcessingService.FailureHandlingResult;
 import java.util.List;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "notification.worker", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class NotificationWorker {
-
-    private static final Logger log = LoggerFactory.getLogger(NotificationWorker.class);
 
     private final NotificationProcessingService processingService;
     private final NotificationSender sender;

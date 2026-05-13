@@ -1,13 +1,11 @@
 package com.liveklass.demo.notification.sender;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 public class LogNotificationSender implements NotificationSender {
-
-    private static final Logger log = LoggerFactory.getLogger(LogNotificationSender.class);
 
     @Override
     public void send(NotificationSendCommand command) {
