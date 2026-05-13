@@ -1,7 +1,6 @@
 package com.liveklass.demo.notification.worker;
 
 import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
-import com.liveklass.demo.notification.domain.NotificationRequest;
 import com.liveklass.demo.notification.sender.NotificationSendCommand;
 import com.liveklass.demo.notification.sender.NotificationSender;
 import com.liveklass.demo.notification.service.NotificationProcessingService;
@@ -46,23 +45,11 @@ public class NotificationWorker {
         }
         NotificationDeliveryJob job = processingService.loadClaimed(requestId, workerId);
         try {
-            sender.send(sendCommand(job.getRequest()));
+            sender.send(NotificationSendCommand.from(job.getRequest()));
             processingService.markSent(requestId, workerId);
         } catch (Exception failure) {
             processingService.recordFailure(requestId, workerId, failure);
         }
         return true;
-    }
-
-    private NotificationSendCommand sendCommand(NotificationRequest request) {
-        return new NotificationSendCommand(
-                request.getId(),
-                request.getRecipientId(),
-                request.getNotificationType(),
-                request.getChannel(),
-                request.getEventId(),
-                request.getTitle(),
-                request.getMessage()
-        );
     }
 }
