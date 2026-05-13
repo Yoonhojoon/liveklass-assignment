@@ -7,17 +7,27 @@
 ## 기술 스택
 
 - Java 17
-- Spring Boot
+- Spring Boot 4.0.6
 - Spring Data JPA
+- Spring Web MVC
 - H2 Database
 - Gradle
 - Lombok
+- Micrometer
 
 ## 실행 방법
 
 ```bash
 ./gradlew bootRun
 ```
+
+기본 DB는 파일 기반 H2입니다.
+
+- DB 파일 위치: `./data/liveklass`
+- 스키마 전략: `spring.jpa.hibernate.ddl-auto=update`
+- `create-drop`을 사용하지 않으므로 서버를 재시작해도 알림 요청, 발송 작업, 사용자 알림함 데이터가 유지됩니다.
+- 로컬 데이터를 초기화하려면 애플리케이션을 종료한 뒤 `data` 디렉터리의 H2 파일을 삭제하고 다시 실행합니다.
+- H2 콘솔은 기본 설정에서 비활성화되어 있으며, `local` 프로필을 사용하면 `/h2-console`로 확인할 수 있습니다.
 
 테스트:
 
@@ -79,7 +89,39 @@ Content-Type: application/json
 GET /api/notifications/{id}
 ```
 
-현재 상태, 재시도 횟수, 마지막 실패 사유, 처리/발송/실패 시각을 반환합니다.
+현재 상태, 재시도 횟수, 마지막 실패 사유, 다음 재시도 시각, lock 정보, 처리/발송/실패 시각을 반환합니다.
+
+```json
+{
+  "success": true,
+  "code": "COMMON2000",
+  "message": "요청이 성공했습니다.",
+  "data": {
+    "id": 1,
+    "recipientId": "user-1",
+    "notificationType": "PAYMENT_CONFIRMED",
+    "channel": "EMAIL",
+    "eventId": "payment-1001",
+    "title": "결제가 완료되었습니다",
+    "message": "결제 확정 알림입니다.",
+    "status": "RETRY_WAITING",
+    "retryCount": 1,
+    "lastFailureReason": "temporary sender failure",
+    "nextRetryAt": "2026-05-13T10:01:00Z",
+    "lockedBy": null,
+    "lockedUntil": null,
+    "retryable": true,
+    "terminal": false,
+    "read": false,
+    "readAt": null,
+    "createdAt": "2026-05-13T09:59:00Z",
+    "updatedAt": "2026-05-13T10:00:00Z",
+    "processingStartedAt": "2026-05-13T10:00:00Z",
+    "sentAt": null,
+    "failedAt": null
+  }
+}
+```
 
 ### 사용자 알림 목록
 
@@ -87,7 +129,7 @@ GET /api/notifications/{id}
 GET /api/users/{recipientId}/notifications?read=false
 ```
 
-`read` 파라미터는 생략, `true`, `false`를 지원합니다.
+`read` 파라미터는 생략, `true`, `false`를 지원하며 응답은 공통 래퍼의 `data` 배열로 반환됩니다.
 
 ### 읽음 처리
 
@@ -96,7 +138,13 @@ PATCH /api/notifications/{id}/read
 X-User-Id: user-1
 ```
 
-읽음 처리는 멱등이며 최초 `readAt`만 보존합니다.
+읽음 처리는 멱등이며 최초 `readAt`만 보존합니다. 응답은 상태 조회와 같은 `NotificationResponse`를 공통 래퍼의 `data`로 반환합니다.
+
+### 지원 enum
+
+- `notificationType`: `COURSE_ENROLLED`, `PAYMENT_CONFIRMED`, `COURSE_START_D_MINUS_1`, `COURSE_CANCELED`
+- `channel`: `EMAIL`, `IN_APP`
+- `status`: `REQUESTED`, `PROCESSING`, `SENT`, `RETRY_WAITING`, `FAILED`
 
 ## 데이터 모델 설명
 
@@ -129,6 +177,26 @@ worker가 폴링/점유/재시도하는 DB 큐입니다.
 - `processing_started_at`
 - `sent_at`, `failed_at`
 - `created_at`, `updated_at`
+
+## 운영 설정
+
+알림 worker와 retry 정책은 외부 설정으로 조정합니다.
+
+| 설정 | 기본값 | 설명 |
+| --- | --- | --- |
+| `notification.worker.enabled` | `true` | worker 실행 여부 |
+| `notification.worker.poll-delay-ms` | `5000` | poll 간격 |
+| `notification.worker.batch-size` | `20` | 한 번에 조회할 처리 후보 수 |
+| `notification.worker.lock-ttl` | `10m` | `PROCESSING` 점유 만료 시간 |
+| `notification.retry.max-retries` | `3` | 최초 시도 이후 재시도 가능 횟수 |
+| `notification.retry.backoffs` | `1m,5m,15m` | 재시도 횟수별 대기 시간 |
+
+worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micrometer counter로 남깁니다.
+
+- `notification.worker.sent`
+- `notification.worker.retry_scheduled`
+- `notification.worker.failed`
+- `notification.worker.claim_skipped`
 
 ### `notification_inbox`
 
@@ -170,6 +238,16 @@ worker가 폴링/점유/재시도하는 DB 큐입니다.
 - stale `PROCESSING` 재처리
 - 사용자 목록 read/unread 필터
 - 읽음 처리 멱등성
+
+## 재시작 복구 정책
+
+서버 재시작 후 worker는 파일 DB에 남아 있는 `notification_delivery_job` 중 아래 대상을 다시 처리합니다.
+
+- `REQUESTED`
+- `RETRY_WAITING` 중 `nextRetryAt`이 현재 시각보다 과거인 작업
+- `PROCESSING` 중 `lockedUntil`이 현재 시각보다 과거인 오래 점유된 작업
+
+`SENT`, `FAILED`는 terminal 상태로 보고 자동 재처리하지 않습니다.
 
 ## 미구현 / 제약사항
 

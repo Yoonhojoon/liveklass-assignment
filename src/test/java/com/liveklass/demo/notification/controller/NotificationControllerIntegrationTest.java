@@ -8,11 +8,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.liveklass.demo.notification.domain.NotificationChannel;
+import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -23,6 +25,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -45,6 +49,9 @@ class NotificationControllerIntegrationTest {
 
     @Autowired
     private NotificationInboxRepository inboxRepository;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void clean() {
@@ -143,6 +150,17 @@ class NotificationControllerIntegrationTest {
         @DisplayName("현재 상태와 재시도/시간 정보를 반환한다")
         void statusLookupExposesRetryFailureAndTimestamps() throws Exception {
             long id = create("payment-1002");
+            Instant now = Instant.now();
+            new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                    deliveryJobRepository.claimForProcessing(
+                            id,
+                            "worker-api",
+                            now.plusSeconds(600),
+                            now,
+                            NotificationStatus.REQUESTED,
+                            NotificationStatus.RETRY_WAITING,
+                            NotificationStatus.PROCESSING
+                    ));
 
             mockMvc.perform(get("/api/notifications/{id}", id))
                     .andExpect(status().isOk())
@@ -152,8 +170,12 @@ class NotificationControllerIntegrationTest {
                     .andExpect(jsonPath("$.data.recipientId").value("user-1"))
                     .andExpect(jsonPath("$.data.notificationType").value("PAYMENT_CONFIRMED"))
                     .andExpect(jsonPath("$.data.channel").value("EMAIL"))
-                    .andExpect(jsonPath("$.data.status").value("REQUESTED"))
+                    .andExpect(jsonPath("$.data.status").value("PROCESSING"))
                     .andExpect(jsonPath("$.data.retryCount").value(0))
+                    .andExpect(jsonPath("$.data.lockedBy").value("worker-api"))
+                    .andExpect(jsonPath("$.data.lockedUntil").exists())
+                    .andExpect(jsonPath("$.data.retryable").value(false))
+                    .andExpect(jsonPath("$.data.terminal").value(false))
                     .andExpect(jsonPath("$.data.createdAt").exists())
                     .andExpect(jsonPath("$.data.updatedAt").exists());
         }
@@ -188,7 +210,10 @@ class NotificationControllerIntegrationTest {
 
             mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.length()").value(2));
+                    .andExpect(jsonPath("$.data.length()").value(2))
+                    .andExpect(jsonPath("$.data[0].retryCount").exists())
+                    .andExpect(jsonPath("$.data[0].retryable").value(true))
+                    .andExpect(jsonPath("$.data[0].terminal").value(false));
 
             mockMvc.perform(get("/api/users/{recipientId}/notifications", "user-1").param("read", "true"))
                     .andExpect(status().isOk())
