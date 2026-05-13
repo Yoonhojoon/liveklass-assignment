@@ -37,7 +37,7 @@
 
 ## Docker Compose 실행
 
-회사 테스트나 데모처럼 실행 환경을 맞추고 싶을 때는 Docker Compose로 실행할 수 있습니다.
+회사 테스트나 데모처럼 실행 환경을 맞추고 싶을 때는 Docker Compose로 실행할 수 있습니다. 배포 환경의 통일을 위해 Docker를 권장합니다.
 
 ```bash
 docker compose up --build
@@ -222,14 +222,15 @@ worker가 폴링/점유/재시도하는 DB 큐입니다.
 
 알림 worker와 retry 정책은 외부 설정으로 조정합니다.
 
-| 설정 | 기본값 | 설명 |
-| --- | --- | --- |
-| `notification.worker.enabled` | `true` | worker 실행 여부 |
-| `notification.worker.poll-delay-ms` | `5000` | poll 간격 |
-| `notification.worker.batch-size` | `20` | 한 번에 조회할 처리 후보 수 |
-| `notification.worker.lock-ttl` | `10m` | `PROCESSING` 점유 만료 시간 |
-| `notification.retry.max-retries` | `3` | 최초 시도 이후 재시도 가능 횟수 |
-| `notification.retry.backoffs` | `1m,5m,15m` | 재시도 횟수별 대기 시간 |
+
+| 설정                                | 기본값      | 설명                            |
+| ----------------------------------- | ----------- | ------------------------------- |
+| `notification.worker.enabled`       | `true`      | worker 실행 여부                |
+| `notification.worker.poll-delay-ms` | `5000`      | poll 간격                       |
+| `notification.worker.batch-size`    | `20`        | 한 번에 조회할 처리 후보 수     |
+| `notification.worker.lock-ttl`      | `10m`       | `PROCESSING` 점유 만료 시간     |
+| `notification.retry.max-retries`    | `3`         | 최초 시도 이후 재시도 가능 횟수 |
+| `notification.retry.backoffs`       | `1m,5m,15m` | 재시도 횟수별 대기 시간         |
 
 worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micrometer counter로 남깁니다.
 
@@ -253,10 +254,12 @@ worker는 성공, 재시도 예약, 최종 실패, claim skip을 로그와 Micro
 - 중복 요청은 새 row를 만들지 않고 기존 요청을 반환합니다.
 - DB를 큐처럼 사용하지만, 실제 MQ로 교체 가능하도록 worker 처리 상태는 `notification_delivery_job`에 격리했습니다.
 - 사용자 목록 API 보존을 위해 EMAIL/IN_APP 모두 `notification_inbox` row를 생성합니다.
+- 실제 운영 환경으로 전환이 가능해야 하기 때문에, 추후 로그 검색을 위한 로그 분류가 필요하다고 가정했습니다.
 
 ## 설계 결정과 이유
 
 - API 요청 스레드는 발송하지 않고 요청/job/inbox row만 저장합니다.
+- 실제 메시지 브로커 없이 구현하되, 실제 운영 환경으로 전환 가능한 구조여야 하기 때문에 큐를 사용하지 않되, 이에 대비한 인터페이스 구조로 해야한다고 판단했습니다.
 - worker 실패는 예외로 끝내지 않고 delivery job의 상태, 실패 사유, 재시도 시각으로 저장합니다.
 - 다중 인스턴스 중복 처리는 조건부 update claim으로 방지합니다.
 - `locked_by`, `locked_until`은 delivery job에만 두어 request 원장을 worker 세부 구현에서 분리했습니다.
