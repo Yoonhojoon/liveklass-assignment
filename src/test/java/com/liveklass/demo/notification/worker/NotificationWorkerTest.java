@@ -114,8 +114,10 @@ class NotificationWorkerTest {
         void exhaustedRetryMovesDeliveryJobToFailedAndKeepsFailureReason() {
             NotificationDeliveryJob retryExhausted = job("failed");
             Instant now = Instant.now();
-            retryExhausted.markRetryWaiting(3, "previous", now.minusSeconds(1), now);
-            jobRepository.saveAndFlush(retryExhausted);
+            claimInTransaction(retryExhausted.getRequestId(), "worker-previous", now, now.plusSeconds(600));
+            NotificationDeliveryJob prepared = jobRepository.findById(retryExhausted.getRequestId()).orElseThrow();
+            prepared.markRetryWaiting(3, "previous", now.minusSeconds(1), now);
+            jobRepository.saveAndFlush(prepared);
             NotificationWorker worker = worker(new RecordingSender(true));
 
             worker.processBatch(10);

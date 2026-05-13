@@ -104,6 +104,7 @@ public class NotificationDeliveryJob {
     }
 
     public void markSent(Instant now) {
+        requireProcessing("mark sent");
         status = NotificationStatus.SENT;
         sentAt = now;
         failedAt = null;
@@ -114,6 +115,7 @@ public class NotificationDeliveryJob {
     }
 
     public void markRetryWaiting(int nextRetryCount, String failureReason, Instant nextRetryAt, Instant now) {
+        requireProcessing("mark retry waiting");
         status = NotificationStatus.RETRY_WAITING;
         retryCount = nextRetryCount;
         lastFailureReason = failureReason;
@@ -123,6 +125,7 @@ public class NotificationDeliveryJob {
     }
 
     public void markFailed(int nextRetryCount, String failureReason, Instant now) {
+        requireProcessing("mark failed");
         status = NotificationStatus.FAILED;
         retryCount = nextRetryCount;
         lastFailureReason = failureReason;
@@ -135,5 +138,11 @@ public class NotificationDeliveryJob {
     private void clearLock() {
         lockedBy = null;
         lockedUntil = null;
+    }
+
+    private void requireProcessing(String operation) {
+        if (status != NotificationStatus.PROCESSING) {
+            throw new IllegalStateException("cannot " + operation + " notification delivery job from " + status);
+        }
     }
 }
