@@ -7,11 +7,13 @@
 ## 기술 스택
 
 - Java 17
-- Spring Boot
+- Spring Boot 4.0.6
 - Spring Data JPA
+- Spring Web MVC
 - H2 Database
 - Gradle
 - Lombok
+- Micrometer
 
 ## 실행 방법
 
@@ -25,6 +27,7 @@
 - 스키마 전략: `spring.jpa.hibernate.ddl-auto=update`
 - `create-drop`을 사용하지 않으므로 서버를 재시작해도 알림 요청, 발송 작업, 사용자 알림함 데이터가 유지됩니다.
 - 로컬 데이터를 초기화하려면 애플리케이션을 종료한 뒤 `data` 디렉터리의 H2 파일을 삭제하고 다시 실행합니다.
+- H2 콘솔은 기본 설정에서 비활성화되어 있으며, `local` 프로필을 사용하면 `/h2-console`로 확인할 수 있습니다.
 
 테스트:
 
@@ -90,15 +93,33 @@ GET /api/notifications/{id}
 
 ```json
 {
-  "id": 1,
-  "status": "RETRY_WAITING",
-  "retryCount": 1,
-  "lastFailureReason": "temporary sender failure",
-  "nextRetryAt": "2026-05-13T10:01:00Z",
-  "lockedBy": null,
-  "lockedUntil": null,
-  "retryable": true,
-  "terminal": false
+  "success": true,
+  "code": "COMMON2000",
+  "message": "요청이 성공했습니다.",
+  "data": {
+    "id": 1,
+    "recipientId": "user-1",
+    "notificationType": "PAYMENT_CONFIRMED",
+    "channel": "EMAIL",
+    "eventId": "payment-1001",
+    "title": "결제가 완료되었습니다",
+    "message": "결제 확정 알림입니다.",
+    "status": "RETRY_WAITING",
+    "retryCount": 1,
+    "lastFailureReason": "temporary sender failure",
+    "nextRetryAt": "2026-05-13T10:01:00Z",
+    "lockedBy": null,
+    "lockedUntil": null,
+    "retryable": true,
+    "terminal": false,
+    "read": false,
+    "readAt": null,
+    "createdAt": "2026-05-13T09:59:00Z",
+    "updatedAt": "2026-05-13T10:00:00Z",
+    "processingStartedAt": "2026-05-13T10:00:00Z",
+    "sentAt": null,
+    "failedAt": null
+  }
 }
 ```
 
@@ -108,7 +129,7 @@ GET /api/notifications/{id}
 GET /api/users/{recipientId}/notifications?read=false
 ```
 
-`read` 파라미터는 생략, `true`, `false`를 지원합니다.
+`read` 파라미터는 생략, `true`, `false`를 지원하며 응답은 공통 래퍼의 `data` 배열로 반환됩니다.
 
 ### 읽음 처리
 
@@ -117,7 +138,13 @@ PATCH /api/notifications/{id}/read
 X-User-Id: user-1
 ```
 
-읽음 처리는 멱등이며 최초 `readAt`만 보존합니다.
+읽음 처리는 멱등이며 최초 `readAt`만 보존합니다. 응답은 상태 조회와 같은 `NotificationResponse`를 공통 래퍼의 `data`로 반환합니다.
+
+### 지원 enum
+
+- `notificationType`: `COURSE_ENROLLED`, `PAYMENT_CONFIRMED`, `COURSE_START_D_MINUS_1`, `COURSE_CANCELED`
+- `channel`: `EMAIL`, `IN_APP`
+- `status`: `REQUESTED`, `PROCESSING`, `SENT`, `RETRY_WAITING`, `FAILED`
 
 ## 데이터 모델 설명
 
