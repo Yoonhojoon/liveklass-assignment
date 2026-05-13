@@ -7,7 +7,9 @@ import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.dto.NotificationCreateRequest;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
+import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -52,10 +54,18 @@ class NotificationE2eTest {
     @Autowired
     private NotificationInboxRepository inboxRepository;
 
+    @Autowired
+    private NotificationTemplateRepository templateRepository;
+
+    @Autowired
+    private NotificationRetryAuditRepository retryAuditRepository;
+
     @BeforeEach
     void clean() {
         inboxRepository.deleteAll();
+        retryAuditRepository.deleteAll();
         deliveryJobRepository.deleteAll();
+        templateRepository.deleteAll();
         requestRepository.deleteAll();
     }
 
@@ -68,7 +78,9 @@ class NotificationE2eTest {
                 NotificationChannel.EMAIL,
                 "payment-e2e",
                 "결제가 완료되었습니다",
-                "결제 확정 알림입니다."
+                "결제 확정 알림입니다.",
+                null,
+                null
         );
 
         HttpResponse<String> createResponse = httpClient.send(

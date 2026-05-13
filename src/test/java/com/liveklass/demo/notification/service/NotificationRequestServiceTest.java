@@ -6,15 +6,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.liveklass.demo.notification.domain.NotificationChannel;
 import com.liveklass.demo.notification.domain.NotificationDeliveryJob;
 import com.liveklass.demo.notification.domain.NotificationInbox;
+import com.liveklass.demo.notification.domain.NotificationTemplate;
 import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
+import com.liveklass.demo.notification.exception.NotificationValidationException;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
+import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
 import com.liveklass.demo.notification.service.dto.NotificationDetails;
 import jakarta.validation.ConstraintViolationException;
+import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -30,6 +36,9 @@ class NotificationRequestServiceTest {
     private NotificationRequestService service;
 
     @Autowired
+    private NotificationTemplateService templateService;
+
+    @Autowired
     private NotificationRequestRepository requestRepository;
 
     @Autowired
@@ -38,10 +47,18 @@ class NotificationRequestServiceTest {
     @Autowired
     private NotificationInboxRepository inboxRepository;
 
+    @Autowired
+    private NotificationTemplateRepository templateRepository;
+
+    @Autowired
+    private NotificationRetryAuditRepository retryAuditRepository;
+
     @BeforeEach
     void clean() {
         inboxRepository.deleteAll();
+        retryAuditRepository.deleteAll();
         deliveryJobRepository.deleteAll();
+        templateRepository.deleteAll();
         requestRepository.deleteAll();
     }
 
@@ -89,12 +106,101 @@ class NotificationRequestServiceTest {
                     NotificationChannel.EMAIL,
                     "event-invalid",
                     "결제가 완료되었습니다",
-                    "결제 확정 알림입니다."
+                    "결제 확정 알림입니다.",
+                    null,
+                    null
             );
 
             assertThatThrownBy(() -> service.create(invalid))
                     .isInstanceOf(ConstraintViolationException.class)
                     .hasMessageContaining("recipientId is required");
+        }
+
+        @Test
+        @DisplayName("템플릿 기반 생성은 렌더링된 title/message를 저장한다")
+        void templateModeRendersAndPersistsConcreteContent() {
+            templateRepository.saveAndFlush(new NotificationTemplate(
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "안녕하세요 ${userName}",
+                    "금액 ${amount}",
+                    true
+            ));
+
+            NotificationCreateResult result = service.create(new NotificationCreateCommand(
+                    "user-1",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "event-template",
+                    null,
+                    null,
+                    Map.of("userName", "kim", "amount", "10000"),
+                    null
+            ));
+
+            NotificationDetails details = service.get(result.notification().id());
+            assertThat(details.title()).isEqualTo("안녕하세요 kim");
+            assertThat(details.message()).isEqualTo("금액 10000");
+        }
+
+        @Test
+        @DisplayName("직접 입력과 템플릿 변수를 함께 보내면 검증 에러가 난다")
+        void mixedDirectAndTemplateModeIsRejected() {
+            assertThatThrownBy(() -> service.create(new NotificationCreateCommand(
+                    "user-1",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "event-mixed",
+                    "title",
+                    "message",
+                    Map.of("name", "kim"),
+                    null
+            )))
+                    .isInstanceOf(NotificationValidationException.class)
+                    .hasMessageContaining("provide either title/message or templateVariables");
+        }
+
+        @Test
+        @DisplayName("잘못된 placeholder 문법 템플릿은 저장할 수 없다")
+        void invalidPlaceholderTemplateIsRejected() {
+            assertThatThrownBy(() -> templateService.create(
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    new com.liveklass.demo.notification.dto.NotificationTemplateUpsertRequest(
+                            "안녕하세요 ${userName} ${broken",
+                            "본문",
+                            true
+                    )
+            ))
+                    .isInstanceOf(NotificationValidationException.class)
+                    .hasMessageContaining("template contains unsupported placeholder syntax");
+        }
+
+        @Test
+        @DisplayName("기존 요청이 있으면 템플릿 상태와 무관하게 중복 요청은 기존 row를 반환한다")
+        void duplicateTemplateBackedRequestReturnsExistingBeforeTemplateRender() {
+            NotificationCreateResult first = service.create(command("event-duplicate-template"));
+            templateRepository.saveAndFlush(new NotificationTemplate(
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "안녕하세요 ${userName}",
+                    "금액 ${amount}",
+                    false
+            ));
+
+            NotificationCreateResult duplicate = service.create(new NotificationCreateCommand(
+                    "user-1",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "event-duplicate-template",
+                    null,
+                    null,
+                    Map.of("userName", "kim", "amount", "10000"),
+                    null
+            ));
+
+            assertThat(duplicate.duplicated()).isTrue();
+            assertThat(duplicate.notification().id()).isEqualTo(first.notification().id());
         }
     }
 
@@ -116,6 +222,27 @@ class NotificationRequestServiceTest {
             assertThat(service.listForRecipient("user-1", true)).hasSize(1);
             assertThat(service.listForRecipient("user-1", false)).isEmpty();
         }
+
+        @Test
+        @DisplayName("예약 알림은 즉시 inbox에 보이고 scheduledAt을 유지한다")
+        void scheduledNotificationIsVisibleImmediatelyInInbox() {
+            Instant scheduledAt = Instant.parse("2026-05-14T09:00:00Z");
+
+            NotificationCreateResult result = service.create(new NotificationCreateCommand(
+                    "user-1",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "event-scheduled",
+                    "예약 제목",
+                    "예약 본문",
+                    null,
+                    scheduledAt
+            ));
+
+            NotificationDetails details = service.get(result.notification().id());
+            assertThat(details.scheduledAt()).isEqualTo(scheduledAt);
+            assertThat(service.listForRecipient("user-1", false)).hasSize(1);
+        }
     }
 
     private NotificationCreateCommand command(String eventId) {
@@ -125,7 +252,9 @@ class NotificationRequestServiceTest {
                 NotificationChannel.EMAIL,
                 eventId,
                 "결제가 완료되었습니다",
-                "결제 확정 알림입니다."
+                "결제 확정 알림입니다.",
+                null,
+                null
         );
     }
 }

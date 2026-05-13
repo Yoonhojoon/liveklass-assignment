@@ -11,7 +11,9 @@ import com.liveklass.demo.notification.domain.NotificationStatus;
 import com.liveklass.demo.notification.domain.NotificationType;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
+import com.liveklass.demo.notification.repository.NotificationRetryAuditRepository;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
+import com.liveklass.demo.notification.repository.NotificationTemplateRepository;
 import com.liveklass.demo.notification.sender.NotificationSendCommand;
 import com.liveklass.demo.notification.sender.NotificationSender;
 import com.liveklass.demo.notification.service.NotificationProcessingService;
@@ -45,6 +47,12 @@ class NotificationWorkerTest {
     private NotificationInboxRepository inboxRepository;
 
     @Autowired
+    private NotificationTemplateRepository templateRepository;
+
+    @Autowired
+    private NotificationRetryAuditRepository retryAuditRepository;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     private final NotificationProperties workerProperties = new NotificationProperties();
@@ -53,7 +61,9 @@ class NotificationWorkerTest {
     @BeforeEach
     void clean() {
         inboxRepository.deleteAll();
+        retryAuditRepository.deleteAll();
         jobRepository.deleteAll();
+        templateRepository.deleteAll();
         requestRepository.deleteAll();
     }
 
@@ -156,6 +166,38 @@ class NotificationWorkerTest {
     }
 
     @Nested
+    @DisplayName("예약 발송")
+    class ScheduledSend {
+
+        @Test
+        @DisplayName("미래 예약 작업은 아직 발송하지 않는다")
+        void futureScheduledJobIsSkippedUntilDue() {
+            NotificationRequest request = requestRepository.saveAndFlush(new NotificationRequest(
+                    "user-1",
+                    NotificationType.PAYMENT_CONFIRMED,
+                    NotificationChannel.EMAIL,
+                    "scheduled-future",
+                    "title",
+                    "message"
+            ));
+            NotificationDeliveryJob scheduled = jobRepository.saveAndFlush(new NotificationDeliveryJob(
+                    request,
+                    Instant.now().plusSeconds(300)
+            ));
+            inboxRepository.saveAndFlush(new NotificationInbox(request));
+            RecordingSender sender = new RecordingSender(false);
+            NotificationWorker worker = worker(sender);
+
+            int processed = worker.processBatch(10);
+
+            NotificationDeliveryJob result = jobRepository.findById(scheduled.getRequestId()).orElseThrow();
+            assertThat(processed).isZero();
+            assertThat(sender.sentIds).isEmpty();
+            assertThat(result.getStatus()).isEqualTo(NotificationStatus.REQUESTED);
+        }
+    }
+
+    @Nested
     @DisplayName("운영 설정")
     class WorkerConfiguration {
 
@@ -209,7 +251,7 @@ class NotificationWorkerTest {
                 "title",
                 "message"
         ));
-        NotificationDeliveryJob job = jobRepository.saveAndFlush(new NotificationDeliveryJob(request));
+        NotificationDeliveryJob job = jobRepository.saveAndFlush(new NotificationDeliveryJob(request, null));
         inboxRepository.saveAndFlush(new NotificationInbox(request));
         return job;
     }
