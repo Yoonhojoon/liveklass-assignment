@@ -7,6 +7,7 @@ import com.liveklass.demo.notification.exception.NotificationNotFoundException;
 import com.liveklass.demo.notification.exception.NotificationValidationException;
 import com.liveklass.demo.notification.repository.NotificationDeliveryJobRepository;
 import com.liveklass.demo.notification.repository.NotificationInboxRepository;
+import com.liveklass.demo.notification.repository.NotificationInboxWithJobView;
 import com.liveklass.demo.notification.repository.NotificationRequestRepository;
 import com.liveklass.demo.notification.service.dto.NotificationCreateCommand;
 import com.liveklass.demo.notification.service.dto.NotificationCreateResult;
@@ -70,16 +71,16 @@ public class NotificationRequestService {
         if (isBlank(recipientId)) {
             throw new NotificationValidationException("recipientId is required");
         }
-        List<NotificationInbox> inboxes;
+        List<NotificationInboxWithJobView> inboxes;
         if (read == null) {
-            inboxes = inboxRepository.findByRecipientIdWithRequestOrderByCreatedAtDesc(recipientId);
+            inboxes = inboxRepository.findDetailsByRecipientIdOrderByCreatedAtDesc(recipientId);
         } else if (read) {
-            inboxes = inboxRepository.findReadByRecipientIdWithRequestOrderByCreatedAtDesc(recipientId);
+            inboxes = inboxRepository.findReadDetailsByRecipientIdOrderByCreatedAtDesc(recipientId);
         } else {
-            inboxes = inboxRepository.findUnreadByRecipientIdWithRequestOrderByCreatedAtDesc(recipientId);
+            inboxes = inboxRepository.findUnreadDetailsByRecipientIdOrderByCreatedAtDesc(recipientId);
         }
         return inboxes.stream()
-                .map(inbox -> details(inbox.getRequest(), inbox))
+                .map(row -> details(row.request(), row.deliveryJob(), row.inbox()))
                 .toList();
     }
 

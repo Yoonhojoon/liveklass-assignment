@@ -48,6 +48,38 @@ public interface NotificationInboxRepository extends JpaRepository<NotificationI
             """)
     List<NotificationInbox> findReadByRecipientIdWithRequestOrderByCreatedAtDesc(@Param("recipientId") String recipientId);
 
+    @Query("""
+            select new com.liveklass.demo.notification.repository.NotificationInboxWithJobView(i, r, j)
+            from NotificationInbox i
+            join i.request r
+            join NotificationDeliveryJob j on j.requestId = i.requestId
+            where i.recipientId = :recipientId
+            order by i.createdAt desc
+            """)
+    List<NotificationInboxWithJobView> findDetailsByRecipientIdOrderByCreatedAtDesc(@Param("recipientId") String recipientId);
+
+    @Query("""
+            select new com.liveklass.demo.notification.repository.NotificationInboxWithJobView(i, r, j)
+            from NotificationInbox i
+            join i.request r
+            join NotificationDeliveryJob j on j.requestId = i.requestId
+            where i.recipientId = :recipientId
+              and i.readAt is null
+            order by i.createdAt desc
+            """)
+    List<NotificationInboxWithJobView> findUnreadDetailsByRecipientIdOrderByCreatedAtDesc(@Param("recipientId") String recipientId);
+
+    @Query("""
+            select new com.liveklass.demo.notification.repository.NotificationInboxWithJobView(i, r, j)
+            from NotificationInbox i
+            join i.request r
+            join NotificationDeliveryJob j on j.requestId = i.requestId
+            where i.recipientId = :recipientId
+              and i.readAt is not null
+            order by i.createdAt desc
+            """)
+    List<NotificationInboxWithJobView> findReadDetailsByRecipientIdOrderByCreatedAtDesc(@Param("recipientId") String recipientId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             update NotificationInbox i

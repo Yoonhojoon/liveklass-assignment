@@ -25,11 +25,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import jakarta.persistence.EntityManagerFactory;
 
 @DisplayName("알림 요청 서비스 테스트")
-@SpringBootTest(properties = "notification.worker.enabled=false")
+@SpringBootTest(properties = {
+        "notification.worker.enabled=false",
+        "spring.jpa.properties.hibernate.generate_statistics=true"
+})
 class NotificationRequestServiceTest {
 
     @Autowired
@@ -52,6 +58,9 @@ class NotificationRequestServiceTest {
 
     @Autowired
     private NotificationRetryAuditRepository retryAuditRepository;
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
 
     @BeforeEach
     void clean() {
@@ -242,6 +251,21 @@ class NotificationRequestServiceTest {
             NotificationDetails details = service.get(result.notification().id());
             assertThat(details.scheduledAt()).isEqualTo(scheduledAt);
             assertThat(service.listForRecipient("user-1", false)).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("목록 조회는 inbox와 delivery job을 한 번에 조회한다")
+        void listForRecipientLoadsInboxAndDeliveryJobInSingleQuery() {
+            service.create(command("event-list-1"));
+            service.create(command("event-list-2"));
+            service.markRead(service.create(command("event-list-3")).notification().id(), "user-1");
+            Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+            statistics.clear();
+
+            java.util.List<NotificationDetails> results = service.listForRecipient("user-1", null);
+
+            assertThat(results).hasSize(3);
+            assertThat(statistics.getPrepareStatementCount()).isEqualTo(1L);
         }
     }
 
